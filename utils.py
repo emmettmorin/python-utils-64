@@ -1,25 +1,26 @@
-def safe_divide(num, denom):
-    try:
-        if denom == 0:
-            raise ValueError('Denominator cannot be zero')
-        return num / denom
-    except TypeError:
-        raise TypeError('Both numerator and denominator must be numbers')
+import json
+from typing import Any, Dict, List, Union
 
+def flatten_json(y: Union[Dict[str, Any], List[Any]]) -> Dict[str, Any]:
+    out = {}
 
-def parse_json(json_string):
-    import json
-    try:
-        return json.loads(json_string)
-    except json.JSONDecodeError:
-        raise ValueError('Invalid JSON string provided')
+    def flatten(x: Union[Dict, List], name: str = ''):
+        if isinstance(x, dict):
+            for a in x:
+                flatten(x[a], name + a + '_')
+        elif isinstance(x, list):
+            for i, a in enumerate(x):
+                flatten(a, name + str(i) + '_')
+        else:
+            out[name[:-1]] = x
 
+    flatten(y)
+    return out
 
-def read_file(file_path):
-    try:
-        with open(file_path, 'r') as file:
-            return file.read()
-    except FileNotFoundError:
-        raise FileNotFoundError(f'The file {file_path} was not found')
-    except IOError:
-        raise IOError(f'An error occurred while reading the file {file_path}')
+def read_json_file(filepath: str) -> Dict[str, Any]:
+    with open(filepath, 'r') as file:
+        return json.load(file)
+
+def write_json_file(filepath: str, data: Dict[str, Any]) -> None:
+    with open(filepath, 'w') as file:
+        json.dump(data, file, indent=4)
