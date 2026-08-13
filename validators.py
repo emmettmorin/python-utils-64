@@ -1,26 +1,34 @@
-import re
+def validate_input(data):
+    if not isinstance(data, dict):
+        raise ValueError("Input must be a dictionary")
+    if 'username' not in data:
+        raise ValueError("Missing 'username' key")
+    if 'age' in data and (not isinstance(data['age'], int) or data['age'] <= 0):
+        raise ValueError("Age must be a positive integer")
+    if 'email' in data:
+        if not isinstance(data['email'], str) or '@' not in data['email']:
+            raise ValueError("Invalid email format")
+    return True
 
-class Validator:
-    def __init__(self):
-        self.email_pattern = re.compile(r"^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$")
-        self.phone_pattern = re.compile(r"^\+?[1-9]\d{1,14}$")
+def main_loop(data_list):
+    for data in data_list:
+        try:
+            validate_input(data)
+            process_data(data)
+        except ValueError as e:
+            print(f"Input error: {e}")
+        except Exception as e:
+            print(f"Unexpected error: {e}")
 
-    def is_valid_email(self, email):
-        return bool(self.email_pattern.match(email))
 
-    def is_valid_phone(self, phone):
-        return bool(self.phone_pattern.match(phone))
+def process_data(data):
+    print(f"Processing data for user: {data['username']}")
 
-    def validate_multiple_emails(self, emails):
-        return [email for email in emails if self.is_valid_email(email)]
-
-    def validate_multiple_phones(self, phones):
-        return [phone for phone in phones if self.is_valid_phone(phone)]
-
-# Example usage
 if __name__ == '__main__':
-    validator = Validator()
-    valid_emails = validator.validate_multiple_emails(['test@example.com', 'invalid-email', 'user@domain.org'])
-    valid_phones = validator.validate_multiple_phones(['+1234567890', '12345', '+987654321'])
-    print(valid_emails)
-    print(valid_phones)
+    sample_data = [
+        {'username': 'User1', 'age': 25, 'email': 'user1@example.com'},
+        {'username': 'User2', 'age': -5},
+        {'username': 'User3', 'email': 'invalidemail'},
+        {'username': 'User4'}
+    ]
+    main_loop(sample_data)
