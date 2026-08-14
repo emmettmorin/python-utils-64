@@ -1,27 +1,20 @@
-import json
+import logging
 import os
+from logging.handlers import RotatingFileHandler
 
-class Config:
-    def __init__(self, config_file='config.json'):
-        self.config_file = config_file
-        self.settings = self.load_config()
+def setup_logger(log_file='app.log', max_bytes=5*1024*1024, backup_count=3):
+    logger = logging.getLogger('rotating_logger')
+    logger.setLevel(logging.DEBUG)
 
-    def load_config(self):
-        if not os.path.exists(self.config_file):
-            return {}
-        with open(self.config_file, 'r') as file:
-            return json.load(file)
+    if not logger.handlers:
+        if not os.path.exists(os.path.dirname(log_file)):
+            os.makedirs(os.path.dirname(log_file))
+        handler = RotatingFileHandler(log_file, maxBytes=max_bytes, backupCount=backup_count)
+        formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+        handler.setFormatter(formatter)
+        logger.addHandler(handler)
 
-    def get(self, key, default=None):
-        return self.settings.get(key, default)
+    return logger
 
-    def set(self, key, value):
-        self.settings[key] = value
-        self.save_config()
-
-    def save_config(self):
-        with open(self.config_file, 'w') as file:
-            json.dump(self.settings, file, indent=4)
-
-    def __repr__(self):
-        return f"<Config settings={self.settings}>"
+logger = setup_logger()
+logger.info('Logger setup complete.')
