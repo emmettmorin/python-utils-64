@@ -1,34 +1,24 @@
-def validate_input(data):
-    if not isinstance(data, dict):
-        raise ValueError("Input must be a dictionary")
-    if 'username' not in data:
-        raise ValueError("Missing 'username' key")
-    if 'age' in data and (not isinstance(data['age'], int) or data['age'] <= 0):
-        raise ValueError("Age must be a positive integer")
-    if 'email' in data:
-        if not isinstance(data['email'], str) or '@' not in data['email']:
-            raise ValueError("Invalid email format")
-    return True
+def validate_input(user_input):
+    if not isinstance(user_input, dict):
+        return False, "Input must be a dictionary"
+    required_keys = ['name', 'age', 'email']
+    for key in required_keys:
+        if key not in user_input:
+            return False, f"Missing required key: {key}"
+        if key == 'age' and (not isinstance(user_input[key], int) or user_input[key] < 0):
+            return False, "Age must be a non-negative integer"
+        if key == 'email' and '@' not in user_input[key]:
+            return False, "Invalid email format"
+    return True, "Valid input"
 
-def main_loop(data_list):
-    for data in data_list:
-        try:
-            validate_input(data)
-            process_data(data)
-        except ValueError as e:
-            print(f"Input error: {e}")
-        except Exception as e:
-            print(f"Unexpected error: {e}")
-
-
-def process_data(data):
-    print(f"Processing data for user: {data['username']}")
+def main_processing_loop():
+    while True:
+        user_input = get_user_input()
+        is_valid, message = validate_input(user_input)
+        if not is_valid:
+            print(message)
+            continue
+        process_valid_input(user_input)
 
 if __name__ == '__main__':
-    sample_data = [
-        {'username': 'User1', 'age': 25, 'email': 'user1@example.com'},
-        {'username': 'User2', 'age': -5},
-        {'username': 'User3', 'email': 'invalidemail'},
-        {'username': 'User4'}
-    ]
-    main_loop(sample_data)
+    main_processing_loop()
