@@ -1,19 +1,22 @@
-class ValidationError(Exception):
+class RobloxError(Exception):
+    """Base class for all Roblox exceptions."""
     pass
 
-def validate_input(data):
-    if not isinstance(data, dict):
-        raise ValidationError('Input must be a dictionary')
-    if 'name' not in data or not isinstance(data['name'], str):
-        raise ValidationError('Missing or invalid name')
-    if 'age' not in data or not isinstance(data['age'], int) or data['age'] <= 0:
-        raise ValidationError('Missing or invalid age')
+class AssetNotFoundError(RobloxError):
+    """Exception raised when an asset is not found."""
+    def __init__(self, asset_id):
+        self.asset_id = asset_id
+        super().__init__(f'Asset with ID {asset_id} was not found.')
 
-if __name__ == '__main__':
-    inputs = [{'name': 'Alice', 'age': 30}, {'name': 123, 'age': 25}, {'name': 'Bob', 'age': -5}]
-    for input_data in inputs:
-        try:
-            validate_input(input_data)
-            print(f'Validated: {input_data}')
-        except ValidationError as e:
-            print(f'Validation failed: {e}')
+class PermissionDeniedError(RobloxError):
+    """Exception raised when permission is denied for an action."""
+    def __init__(self, action):
+        self.action = action
+        super().__init__(f'Permission denied for action: {action}')
+
+class InvalidParameterError(RobloxError):
+    """Exception raised for invalid parameters in function calls."""
+    def __init__(self, param_name, message):
+        self.param_name = param_name
+        self.message = message
+        super().__init__(f'Invalid parameter {param_name}: {message}')
