@@ -1,25 +1,30 @@
-import json
-import re
+import time
+import requests
 
-def validate_username(username):
-    if not isinstance(username, str):
-        raise ValueError('Username must be a string')
-    if len(username) < 3 or len(username) > 20:
-        raise ValueError('Username must be between 3 and 20 characters')
-    if not re.match('^[a-zA-Z0-9_]+$', username):
-        raise ValueError('Username can only contain alphanumeric characters and underscores')
-    return True
+class NetworkError(Exception):
+    pass
 
-def main_processing_loop(usernames):
-    valid_usernames = []
-    for username in usernames:
-        try:
-            validate_username(username)
-            valid_usernames.append(username)
-        except ValueError as e:
-            print(f'Invalid username '{username}': {str(e)}')
-    return valid_usernames
 
-if __name__ == '__main__':
-    test_usernames = ['user_1', 'invalid@user', 'us', 'a_very_long_username_123']
-    print(main_processing_loop(test_usernames))
+def retry_on_failure(retries=3, delay=2):
+    def decorator(func):
+        def wrapper(*args, **kwargs):
+            for attempt in range(retries):
+                try:
+                    return func(*args, **kwargs)
+                except (requests.ConnectionError, requests.Timeout) as e:
+                    if attempt < retries - 1:
+                        time.sleep(delay)
+                        continue
+                    raise NetworkError(f'Network operation failed after {retries} attempts') from e
+        return wrapper
+    return decorator
+
+@retry_on_failure(retries=5, delay=1)
+def fetch_data(url):
+    response = requests.get(url)
+    response.raise_for_status()
+    return response.json()
+
+# Example usage:
+# data = fetch_data('https://api.example.com/data')
+# print(data)
