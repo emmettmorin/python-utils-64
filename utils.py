@@ -1,26 +1,25 @@
 import json
-from typing import Any, Dict, List, Union
+import re
 
-def flatten_json(y: Union[Dict[str, Any], List[Any]]) -> Dict[str, Any]:
-    out = {}
+def validate_username(username):
+    if not isinstance(username, str):
+        raise ValueError('Username must be a string')
+    if len(username) < 3 or len(username) > 20:
+        raise ValueError('Username must be between 3 and 20 characters')
+    if not re.match('^[a-zA-Z0-9_]+$', username):
+        raise ValueError('Username can only contain alphanumeric characters and underscores')
+    return True
 
-    def flatten(x: Union[Dict, List], name: str = ''):
-        if isinstance(x, dict):
-            for a in x:
-                flatten(x[a], name + a + '_')
-        elif isinstance(x, list):
-            for i, a in enumerate(x):
-                flatten(a, name + str(i) + '_')
-        else:
-            out[name[:-1]] = x
+def main_processing_loop(usernames):
+    valid_usernames = []
+    for username in usernames:
+        try:
+            validate_username(username)
+            valid_usernames.append(username)
+        except ValueError as e:
+            print(f'Invalid username '{username}': {str(e)}')
+    return valid_usernames
 
-    flatten(y)
-    return out
-
-def read_json_file(filepath: str) -> Dict[str, Any]:
-    with open(filepath, 'r') as file:
-        return json.load(file)
-
-def write_json_file(filepath: str, data: Dict[str, Any]) -> None:
-    with open(filepath, 'w') as file:
-        json.dump(data, file, indent=4)
+if __name__ == '__main__':
+    test_usernames = ['user_1', 'invalid@user', 'us', 'a_very_long_username_123']
+    print(main_processing_loop(test_usernames))
