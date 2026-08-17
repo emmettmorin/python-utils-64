@@ -1,32 +1,41 @@
-def calculate_discount(price, discount):
-    if discount < 0 or discount > 100:
-        raise ValueError('Discount must be between 0 and 100')
-    return price - (price * (discount / 100))
+import random
+
+class Player:
+    def __init__(self, name, health=100):
+        self.name = name
+        self.health = health
+        self.inventory = []
+
+    def take_damage(self, amount):
+        self.health -= amount
+        if self.health < 0:
+            self.health = 0
+        return self.health
+
+    def heal(self, amount):
+        self.health += amount
+        if self.health > 100:
+            self.health = 100
+        return self.health
+
+    def add_item(self, item):
+        self.inventory.append(item)
 
 
-def format_price(price):
-    return f'${price:.2f}'
+class Game:
+    def __init__(self):
+        self.players = []
 
+    def add_player(self, player):
+        self.players.append(player)
 
-def is_valid_username(username):
-    return username.isalnum() and 3 <= len(username) <= 20
-
-
-def sanitize_input(user_input):
-    return ''.join(char for char in user_input if char.isalnum() or char in (' ', '_'))
-
-
-def find_max(numbers):
-    if not numbers:
-        return None
-    max_number = numbers[0]
-    for number in numbers:
-        if number > max_number:
-            max_number = number
-    return max_number
-
-
-def calculate_average(numbers):
-    if not numbers:
-        return 0
-    return sum(numbers) / len(numbers)
+    def random_event(self):
+        for player in self.players:
+            if random.choice([True, False]):
+                damage = random.randint(5, 20)
+                player.take_damage(damage)
+                print(f'{player.name} took {damage} damage! Health now: {player.health}')
+            else:
+                heal_amount = random.randint(5, 20)
+                player.heal(heal_amount)
+                print(f'{player.name} healed {heal_amount}! Health now: {player.health}')
