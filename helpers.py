@@ -1,44 +1,32 @@
-from typing import List, Dict, Any
+def calculate_discount(price, discount):
+    if discount < 0 or discount > 100:
+        raise ValueError('Discount must be between 0 and 100')
+    return price - (price * (discount / 100))
 
 
-def flatten_nested_dict(nested_dict: Dict[str, Any], parent_key: str = '', sep: str = '.' ) -> Dict[str, Any]:
-    """
-    Flattens a nested dictionary into a single level dictionary.
-    Keys are concatenated with a specified separator.
-    
-    :param nested_dict: The nested dictionary to flatten.
-    :param parent_key: The base key string to use for nested keys.
-    :param sep: The separator to use for concatenation of keys.
-    :return: A flattened dictionary.
-    """
-    items = []
-    for k, v in nested_dict.items():
-        new_key = f'{parent_key}{sep}{k}' if parent_key else k
-        if isinstance(v, dict):
-            items.extend(flatten_nested_dict(v, new_key, sep=sep).items())
-        else:
-            items.append((new_key, v))
-    return dict(items)
+def format_price(price):
+    return f'${price:.2f}'
 
 
-def generate_random_numbers(count: int, low: int, high: int) -> List[int]:
-    """
-    Generates a list of random integers.
-    
-    :param count: The number of random integers to generate.
-    :param low: The lower bound for random integer generation.
-    :param high: The upper bound for random integer generation.
-    :return: A list containing generated random integers.
-    """
-    import random
-    return [random.randint(low, high) for _ in range(count)]
-
-
-def is_valid_username(username: str) -> bool:
-    """
-    Checks if a username is valid based on Roblox's requirements.
-    
-    :param username: The username to validate.
-    :return: True if the username is valid, otherwise False.
-    """
+def is_valid_username(username):
     return username.isalnum() and 3 <= len(username) <= 20
+
+
+def sanitize_input(user_input):
+    return ''.join(char for char in user_input if char.isalnum() or char in (' ', '_'))
+
+
+def find_max(numbers):
+    if not numbers:
+        return None
+    max_number = numbers[0]
+    for number in numbers:
+        if number > max_number:
+            max_number = number
+    return max_number
+
+
+def calculate_average(numbers):
+    if not numbers:
+        return 0
+    return sum(numbers) / len(numbers)
