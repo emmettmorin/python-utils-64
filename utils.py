@@ -1,30 +1,56 @@
-import time
-import requests
-
-class NetworkError(Exception):
-    pass
+from typing import List, Union, Optional
 
 
-def retry_on_failure(retries=3, delay=2):
-    def decorator(func):
-        def wrapper(*args, **kwargs):
-            for attempt in range(retries):
-                try:
-                    return func(*args, **kwargs)
-                except (requests.ConnectionError, requests.Timeout) as e:
-                    if attempt < retries - 1:
-                        time.sleep(delay)
-                        continue
-                    raise NetworkError(f'Network operation failed after {retries} attempts') from e
-        return wrapper
-    return decorator
+def find_player(players: List[str], name: str) -> Optional[str]:
+    """
+    Searches for a player by name in the given list of players.
+    
+    Args:
+        players (List[str]): A list of player names.
+        name (str): The name of the player to search for.
+    
+    Returns:
+        Optional[str]: The name of the player if found, otherwise None.
+    """  
+    return name if name in players else None
 
-@retry_on_failure(retries=5, delay=1)
-def fetch_data(url):
-    response = requests.get(url)
-    response.raise_for_status()
-    return response.json()
 
-# Example usage:
-# data = fetch_data('https://api.example.com/data')
-# print(data)
+def calculate_average_score(scores: List[Union[int, float]]) -> float:
+    """
+    Calculates the average score from a list of scores.
+    
+    Args:
+        scores (List[Union[int, float]]): A list of scores from players.
+    
+    Returns:
+        float: The average score, or 0.0 if no scores are provided.
+    """  
+    return sum(scores) / len(scores) if scores else 0.0
+
+
+def is_player_active(active_players: List[str], name: str) -> bool:
+    """
+    Checks if a player is currently active.
+    
+    Args:
+        active_players (List[str]): A list of currently active player names.
+        name (str): The name of the player to check.
+    
+    Returns:
+        bool: True if the player is active, otherwise False.
+    """  
+    return name in active_players
+
+
+def get_player_statistics(player: str, stats: dict) -> dict:
+    """
+    Retrieves statistics for a specific player.
+    
+    Args:
+        player (str): The name of the player.
+        stats (dict): A dictionary containing player statistics.
+    
+    Returns:
+        dict: A dictionary containing the player's statistics or an empty dict if not found.
+    """  
+    return stats.get(player, {})
