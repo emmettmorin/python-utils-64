@@ -1,41 +1,31 @@
-import random
+import json
 
-class Player:
-    def __init__(self, name, health=100):
-        self.name = name
-        self.health = health
-        self.inventory = []
+class ConfigLoader:
+    def __init__(self, default_config):
+        self.default_config = default_config
+        self.loaded_config = default_config.copy()
 
-    def take_damage(self, amount):
-        self.health -= amount
-        if self.health < 0:
-            self.health = 0
-        return self.health
+    def load(self, json_file_path):
+        try:
+            with open(json_file_path, 'r') as json_file:
+                file_config = json.load(json_file)
+                self._merge_configs(file_config)
+        except FileNotFoundError:
+            print(f'Config file not found: {json_file_path}')
+        except json.JSONDecodeError:
+            print(f'Error decoding JSON from the file: {json_file_path}')
 
-    def heal(self, amount):
-        self.health += amount
-        if self.health > 100:
-            self.health = 100
-        return self.health
+    def _merge_configs(self, file_config):
+        for key, value in file_config.items():
+            if key in self.default_config:
+                self.loaded_config[key] = value
 
-    def add_item(self, item):
-        self.inventory.append(item)
+    def get_config(self):
+        return self.loaded_config
 
-
-class Game:
-    def __init__(self):
-        self.players = []
-
-    def add_player(self, player):
-        self.players.append(player)
-
-    def random_event(self):
-        for player in self.players:
-            if random.choice([True, False]):
-                damage = random.randint(5, 20)
-                player.take_damage(damage)
-                print(f'{player.name} took {damage} damage! Health now: {player.health}')
-            else:
-                heal_amount = random.randint(5, 20)
-                player.heal(heal_amount)
-                print(f'{player.name} healed {heal_amount}! Health now: {player.health}')
+# Example usage:
+# default_config = {'setting1': 'default_value', 'setting2': 42}
+# loader = ConfigLoader(default_config)
+# loader.load('config.json')
+# config = loader.get_config()  
+# print(config)
