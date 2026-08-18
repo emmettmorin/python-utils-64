@@ -1,22 +1,27 @@
 class RobloxError(Exception):
-    """Base class for all Roblox exceptions."""
+    """Base class for all Roblox-related exceptions."""
     pass
 
 class AssetNotFoundError(RobloxError):
-    """Exception raised when an asset is not found."""
-    def __init__(self, asset_id):
+    """Raised when an asset is not found in Roblox."""
+    def __init__(self, asset_id: int) -> None:
+        super().__init__(f'Asset with ID {asset_id} not found.')
         self.asset_id = asset_id
-        super().__init__(f'Asset with ID {asset_id} was not found.')
 
 class PermissionDeniedError(RobloxError):
-    """Exception raised when permission is denied for an action."""
-    def __init__(self, action):
-        self.action = action
-        super().__init__(f'Permission denied for action: {action}')
+    """Raised when a user does not have permission to access a resource."""
+    pass
 
-class InvalidParameterError(RobloxError):
-    """Exception raised for invalid parameters in function calls."""
-    def __init__(self, param_name, message):
-        self.param_name = param_name
+class InvalidRequestError(RobloxError):
+    """Raised when a request to the Roblox API is invalid."""
+    def __init__(self, message: str) -> None:
+        super().__init__(message)
         self.message = message
-        super().__init__(f'Invalid parameter {param_name}: {message}')
+
+class RateLimitExceededError(RobloxError):
+    """Raised when the API rate limit has been exceeded."""
+    pass
+
+# Example usage:
+# raise AssetNotFoundError(123456)
+# raise InvalidRequestError('Invalid parameters provided for the request.')
