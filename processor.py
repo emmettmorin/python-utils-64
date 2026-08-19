@@ -1,32 +1,27 @@
-import json
-import re
+import time
+from typing import List, Any
 
-def validate_input(user_input):
-    if not isinstance(user_input, str):
-        return False
-    if len(user_input) < 3:
-        return False
-    if not re.match('^[a-zA-Z0-9_]+$', user_input):
-        return False
-    return True
+class Processor:
+    def __init__(self):
+        self.results = []
 
-def process_input(user_input):
-    if validate_input(user_input):
-        # Simulating processing
-        return f'Processed: {user_input}'
-    else:
-        raise ValueError('Invalid input')
+    def process_data(self, data: List[Any]) -> List[Any]:
+        start_time = time.time()
+        self.results = [self._compute(item) for item in data]
+        end_time = time.time()
+        print(f"Processing completed in {end_time - start_time:.4f} seconds")
+        return self.results
 
-def main_loop():
-    user_inputs = ['validInput1', 'bad input', 'ab', 'validInput2']
-    results = []
-    for input_str in user_inputs:
-        try:
-            result = process_input(input_str)
-            results.append(result)
-        except ValueError as e:
-            results.append(str(e))
-    print(json.dumps(results, indent=2))
+    def _compute(self, item: Any) -> Any:
+        # Simulating a time-consuming computation
+        time.sleep(0.1)  # Simulate computation delay
+        return item * 2
 
-if __name__ == '__main__':
-    main_loop()
+    def get_results(self) -> List[Any]:
+        return self.results
+
+if __name__ == "__main__":
+    processor = Processor()
+    data = [1, 2, 3, 4, 5]
+    results = processor.process_data(data)
+    print(results)
