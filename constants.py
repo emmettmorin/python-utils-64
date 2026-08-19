@@ -1,30 +1,34 @@
-PI = 3.14159
+from typing import Final
 
-EULER = 2.71828
+# Constants related to Roblox game development
 
-class StatusCodes:
-    OK = 200
-    CREATED = 201
-    ACCEPTED = 202
-    NO_CONTENT = 204
-    BAD_REQUEST = 400
-    UNAUTHORIZED = 401
-    FORBIDDEN = 403
-    NOT_FOUND = 404
-    INTERNAL_SERVER_ERROR = 500
+# The base URL for the Roblox API
+ROBLOX_API_URL: Final[str] = 'https://api.roblox.com/'
 
-DEFAULT_TIMEOUT = 30
-MAX_RETRIES = 5
+# Commonly used exception messages
+INVALID_USER_ID: Final[str] = 'The user ID provided is invalid.'
 
-HTTP_METHODS = ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS']
+# Default values for various game settings
+DEFAULT_GAME_NAME: Final[str] = 'Untitled Game'
+DEFAULT_MAX_PLAYERS: Final[int] = 10
 
-ERROR_MESSAGES = {
-    'MISSING_FIELD': 'A required field is missing.',
-    'INVALID_INPUT': 'The input provided is invalid.',
-    'NOT_FOUND': 'The requested resource was not found.',
-    'UNAUTHORIZED_ACCESS': 'You do not have access to this resource.'
-}
+# Roblox user permission levels
+class PermissionLevel:
+    ADMIN: Final[str] = 'Admin'
+    MODERATOR: Final[str] = 'Moderator'
+    USER: Final[str] = 'User'
 
-DEFAULT_PAGE_SIZE = 10
-MIN_PAGE_SIZE = 1
-MAX_PAGE_SIZE = 100
+# Game genres
+class GameGenre:
+    ADVENTURE: Final[str] = 'Adventure'
+    FPS: Final[str] = 'First-Person Shooter'
+    RPG: Final[str] = 'Role-Playing Game'
+    SIMULATION: Final[str] = 'Simulation'
+
+# HTTP status codes for Roblox API responses
+class HttpStatus:
+    OK: Final[int] = 200
+    NOT_FOUND: Final[int] = 404
+    INTERNAL_SERVER_ERROR: Final[int] = 500
+
+
