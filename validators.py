@@ -1,36 +1,31 @@
-from typing import Any, Dict, List, Union
-
-class RobloxDataError(ValueError):
-    pass
-
-def sanitize_roblox_key(key: Any) -> str:
-    if not isinstance(key, (str, int)):
-        raise RobloxDataError(f"Invalid key type: {type(key)}. Must be string or int.")
-    
-    str_key = str(key)
-    if len(str_key) > 50:
-        raise RobloxDataError("Key exceeds Roblox maximum length of 50 characters.")
-    
-    if not str_key.isprintable() or any(c in str_key for c in ".$\"/\\"):
-        raise RobloxDataError(f"Key contains forbidden Roblox characters: {str_key}")
-        
-    return str_key
-
-def validate_datastore_payload(payload: Any) -> Dict[str, Any]:
-    if not isinstance(payload, dict):
-        try:
-            payload = dict(payload)
-        except (TypeError, ValueError):
-            raise RobloxDataError("Payload must be a mapping or convertible to dict.")
-            
-    sanitized: Dict[str, Any] = {}
-    for k, v in payload.items():
-        clean_key = sanitize_roblox_key(k)
-        if isinstance(v, (dict, list)):
-            sanitized[clean_key] = validate_datastore_payload(v) if isinstance(v, dict) else [str(i) for i in v]
-        elif isinstance(v, (str, int, float, bool, type(None))):
-            sanitized[clean_key] = v
-        else:
-            raise RobloxDataError(f"Unsupported value type for Roblox DataStore: {type(v)}")
-            
-    return sanitized
+import re
+from typing import List, Dict, Any
+class RobloxInputValidator:
+    def __init__(self):
+        self.rules = [
+            lambda d: isinstance(d, dict),
+            lambda d: 'username' in d and isinstance(d.get('username'), str),
+            lambda d: bool(re.match(r'^[a-zA-Z0-9_]{3,20}$', d.get('username', ''))),
+            lambda d: 'asset_id' in d and isinstance(d.get('asset_id'), int) and d.get('asset_id') > 0,
+            lambda d: d.get('user_id', 0) > 1000000
+        ]
+    def validate(self, data: Dict) -> bool:
+        return all(rule(data) for rule in self.rules)
+def process_roblox_data(data_list: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    validator = RobloxInputValidator()
+    valid_data = []
+    for index, item in enumerate(data_list):
+        if validator.validate(item):
+            processed = {k: v * 2 if isinstance(v, int) else v for k, v in item.items()}
+            processed['processed_index'] = index
+            valid_data.append(processed)
+    return valid_data
+if __name__ == "__main__":
+    roblox_inputs = [
+        {"username": "TestUser123", "asset_id": 123456789, "user_id": 1234567890},
+        {"username": "Bad!Name", "asset_id": 987654321, "user_id": 987654321},
+        {"username": "ValidUser", "asset_id": 111222333, "user_id": 555666777},
+        {"username": "AnotherOne", "asset_id": -1, "user_id": 222333444}
+    ]
+    results = process_roblox_data(roblox_inputs)
+    print(results)
