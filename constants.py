@@ -1,77 +1,80 @@
-"""Roblox constants for python-utils-64.
-Implements type annotations and docstrings creatively.
-"""
-from __future__ import annotations
-from typing import Final, Dict, List, Optional, Any
-class RobloxConstants:
-    """Central repository for Roblox constants.
-    Provides immutable-like constants for use in Roblox utilities.
-    Creative approach using class for organization.
-    """
-    API_BASE: Final[str] = "https://api.roblox.com"
-    AUTH_BASE: Final[str] = "https://auth.roblox.com"
-    FRIENDS_API: Final[str] = "https://friends.roblox.com"
-    ASSET_API: Final[str] = "https://assetgame.roblox.com"
-    ASSET_TYPES: Final[Dict[str, int]] = {
-        "Image": 1,
-        "TShirt": 2,
-        "Audio": 3,
-        "Mesh": 4,
-        "Lua": 5,
-        "HTML": 6,
-        "Text": 7,
-        "Hat": 8,
-        "Place": 9,
-        "Model": 10,
-        "Shirt": 11,
-        "Pants": 12,
-        "Decal": 13,
-        "Head": 14,
-        "Face": 15,
-        "Gear": 19,
-    }
-    ERROR_CODES: Final[Dict[int, str]] = {
-        400: "Bad Request",
-        401: "Unauthorized",
-        403: "Forbidden",
-        404: "Not Found",
-        429: "Too Many Requests",
-        500: "Internal Server Error",
-        503: "Service Unavailable",
-    }
-    MAX_FRIENDS: Final[int] = 200
-    MAX_GROUPS: Final[int] = 100
-    def get_constant(self, name: str) -> Optional[Any]:
-        """Retrieve a constant value by its uppercase name.
-        Uses dynamic attribute access for flexibility.
-        Args:
-            name: Name of the constant in any case.
-        Returns:
-            The value of the constant or None.
-        """
-        upper_name: str = name.upper()
-        if hasattr(self, upper_name):
-            return getattr(self, upper_name)
-        return None
-    @classmethod
-    def list_asset_types(cls) -> List[str]:
-        """Return a list of all defined asset type names.
-        Useful for validation and iteration in Roblox contexts.
-        Returns:
-            List containing all keys from ASSET_TYPES.
-        """
-        return list(cls.ASSET_TYPES.keys())
-ROBLOX_CONSTS: Final[RobloxConstants] = RobloxConstants()
-def validate_asset_type(asset_type: str) -> bool:
-    """Check if the provided string is a valid asset type.
-    Args:
-        asset_type: The asset type name to validate.
-    Returns:
-        True if valid, False otherwise.
-    """
-    return asset_type in RobloxConstants.ASSET_TYPES
-if __name__ == "__main__":
-    print("API Base:", ROBLOX_CONSTS.API_BASE)
-    print("Max Friends:", ROBLOX_CONSTS.get_constant("max_friends"))
-    print("Some asset types:", RobloxConstants.list_asset_types()[:5])
-    print("Is 'Model' valid:", validate_asset_type("Model"))
+import json
+from typing import Any, Dict, List, Optional, Union
+
+ROBLOX_CONSTANTS = {
+    "MAX_USERNAME_LENGTH": 20,
+    "MIN_USER_ID": 1,
+    "MAX_ASSET_ID": 2**63 - 1,
+    "DATASTORE_MAX_KEY_LENGTH": 50,
+    "HTTP_TIMEOUT": 30,
+    "ASSET_TYPES": {
+        1: "Image",
+        2: "TShirt",
+        3: "Audio",
+        4: "Mesh",
+        5: "Lua",
+        6: "HTML",
+        7: "Text",
+        8: "Hat",
+        9: "Place",
+        10: "Model",
+        11: "Shirt",
+        12: "Pants",
+        13: "Decal",
+        14: "Avatar",
+        15: "Head",
+        16: "Face",
+        17: "Gear",
+        18: "Badge",
+        19: "GroupEmblem",
+        20: "Animation",
+    },
+    "VALID_DATA_KEYS": ["id", "name", "displayName", "created", "updated"],
+}
+
+def get_constant(name: str) -> Any:
+    """Retrieve a Roblox constant by name."""
+    return ROBLOX_CONSTANTS.get(name)
+
+def process_roblox_data(raw_data: Union[Dict, List, str]) -> Dict[str, Any]:
+    """Utility function to handle and normalize Roblox data structures.
+    Creative approach: recursively processes using constant mappings and type checks."""
+    if isinstance(raw_data, str):
+        try:
+            raw_data = json.loads(raw_data)
+        except json.JSONDecodeError:
+            return {"error": "Invalid JSON", "input": raw_data}
+    if isinstance(raw_data, dict):
+        processed = {}
+        for key, value in raw_data.items():
+            if key in ROBLOX_CONSTANTS["VALID_DATA_KEYS"]:
+                processed[key] = value
+            elif key == "assetTypeId":
+                asset_map = ROBLOX_CONSTANTS["ASSET_TYPES"]
+                processed["assetType"] = asset_map.get(value, "Unknown")
+                processed[key] = value
+            elif isinstance(value, dict):
+                processed[key] = process_roblox_data(value)
+            elif isinstance(value, list):
+                processed[key] = [process_roblox_data(item) if isinstance(item, (dict, list)) else item for item in value]
+            else:
+                processed[key] = value
+        return processed
+    elif isinstance(raw_data, list):
+        return [process_roblox_data(item) for item in raw_data]
+    return {"data": raw_data}
+
+def validate_roblox_user_id(user_id: int) -> bool:
+    """Check if user ID is within Roblox valid range using constants."""
+    min_id = ROBLOX_CONSTANTS["MIN_USER_ID"]
+    max_id = ROBLOX_CONSTANTS["MAX_ASSET_ID"]
+    return min_id <= user_id <= max_id
+
+def batch_handle_roblox_data(data_list: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Process multiple data entries in a batch for efficiency."""
+    return [process_roblox_data(data) for data in data_list]
+
+def encode_roblox_data(data: Dict[str, Any]) -> str:
+    """Unusual encoding: convert data to a Roblox-like string format using json and prefix."""
+    processed = process_roblox_data(data)
+    return "ROBLOX_DATA:" + json.dumps(processed)
