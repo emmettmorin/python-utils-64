@@ -1,57 +1,45 @@
-import time
-import random
-import functools
+import sys
+import traceback
+import logging
 
-def with_retry(max_attempts=5, delay=0.5):
-    def decorator(func):
-        @functools.wraps(func)
-        def wrapper(*args, **kwargs):
-            last_exception = None
-            for attempt in range(1, max_attempts + 1):
-                try:
-                    return func(*args, **kwargs)
-                except Exception as exc:
-                    last_exception = exc
-                    if attempt == max_attempts:
-                        break
-                    # unusual jitter calculation using hash for creative randomness
-                    jitter = (hash(f"{attempt}{exc}") % 1000) / 1000
-                    sleep_time = delay * (2 ** (attempt - 1)) + jitter
-                    time.sleep(sleep_time)
-            if last_exception:
-                raise last_exception
-            return None
-        return wrapper
-    return decorator
+class RobloxException(Exception):
+    """Base exception for python-utils-64."""
+    pass
 
-class RobloxNetworkHandler:
-    """Handler for Roblox related network calls with built-in retry"""
-    def __init__(self):
-        self.base = "https://users.roblox.com"
-    @with_retry(max_attempts=4, delay=1)
-    def get_user(self, user_id):
-        # Simulate a network call
-        # Real implementation would be requests.get(self.base + f"/v1/users/{user_id}")
-        if random.random() > 0.4:
-            raise ConnectionError("Roblox API rate limit or timeout")
-        return {"id": user_id, "username": "TestPlayer" + str(user_id)}
-    @with_retry(max_attempts=3, delay=0.2)
-    def get_friends(self, user_id):
-        if random.random() > 0.5:
-            raise TimeoutError("Connection timed out to Roblox")
-        return [f"friend{i}" for i in range(5)]
+class RobloxErrorHandler:
+    def __init__(self, logger=None):
+        self.logger = logger or logging.getLogger('roblox-handler')
 
-if __name__ == "__main__":
-    handler = RobloxNetworkHandler()
-    print("Fetching user...")
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if exc_type is None:
+            return True
+        
+        err_map = {
+            ConnectionError: "Network heartbeat failure detected",
+            TimeoutError: "API request exceeded latency threshold",
+            ValueError: "Malformed data packet encountered",
+            KeyError: "Missing expected field in Luau object"
+        }
+
+        msg = err_map.get(exc_type, f"Unexpected runtime quirk: {exc_val}")
+        self.logger.error(f"[64-BIT-ERR] {msg}")
+        self.logger.debug("".join(traceback.format_exception(exc_type, exc_val, exc_tb)))
+        return False
+
+def robust_execute(func):
+    def wrapper(*args, **kwargs):
+        with RobloxErrorHandler():
+            return func(*args, **kwargs)
+    return wrapper
+
+def safe_data_access(data, path, default=None):
+    """Navigation through nested Roblox JSON objects."""
     try:
-        user = handler.get_user(123)
-        print("User:", user)
-    except Exception as err:
-        print("User fetch failed:", err)
-    print("Fetching friends...")
-    try:
-        friends = handler.get_friends(123)
-        print("Friends:", friends)
-    except Exception as err:
-        print("Friends fetch failed:", err)
+        for key in path.split('.'):
+            data = data[key]
+        return data
+    except (KeyError, TypeError, AttributeError):
+        return default
