@@ -1,39 +1,26 @@
-import re
-from typing import Optional, Dict, Any
-import base64
+from typing import Any, Union, List, Optional
 
-def extract_id_from_roblox_url(url: str) -> Optional[int]:
-    pattern = r"roblox\.com/(?:users|games|catalog|library|marketplace)/(\d+)"
-    match = re.search(pattern, url, re.IGNORECASE)
-    if match:
-        return int(match.group(1))
-    return None
-
-def is_valid_roblox_username(username: str) -> bool:
-    if len(username) < 3 or len(username) > 20:
-        return False
-    allowed_chars = set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_")
-    return all(char in allowed_chars for char in username)
-
-def encode_roblox_id(roblox_id: int) -> str:
-    encoded = base64.b64encode(str(roblox_id).encode("utf-8"))
-    return encoded.decode("utf-8")
-
-def decode_roblox_id(encoded_id: str) -> Optional[int]:
+def roblox_id_validator(raw_input: Union[str, int]) -> int:
+    """Validate and cast Roblox resource IDs to integers."""
     try:
-        decoded = base64.b64decode(encoded_id.encode("utf-8"))
-        return int(decoded.decode("utf-8"))
+        return int(raw_input)
     except (ValueError, TypeError):
-        return None
+        raise ValueError(f"Invalid Roblox ID format: {raw_input}")
 
-def generate_roblox_asset_url(asset_id: int, asset_type: str = "catalog") -> str:
-    valid_types = {"catalog", "library", "games"}
-    if asset_type not in valid_types:
-        asset_type = "catalog"
-    return f"https://www.roblox.com/{asset_type}/{asset_id}"
+def format_roblox_assets(asset_ids: List[Union[str, int]], prefix: str = "rbxassetid://") -> List[str]:
+    """Inject prefix into a list of Roblox asset identifiers."""
+    return [f"{prefix}{roblox_id_validator(aid)}" for aid in asset_ids]
 
-def normalize_roblox_data(data: Dict[str, Any]) -> Dict[str, Any]:
-    return {k: int(v) if isinstance(v, str) and v.isdigit() else v for k, v in data.items()}
+def chunk_data(data: List[Any], size: int = 50) -> List[List[Any]]:
+    """Partition data for batch processing Roblox API endpoints."""
+    if size <= 0:
+        raise ValueError("Chunk size must be positive integer")
+    return [data[i:i + size] for i in range(0, len(data), size)]
 
-def get_roblox_profile_url(user_id: int) -> str:
-    return f"https://www.roblox.com/users/{user_id}/profile"
+def extract_game_key(url: str) -> Optional[str]:
+    """Extract game place identifier from standard web URLs."""
+    parts = url.split('/')
+    for i, part in enumerate(parts):
+        if part == "games" and i + 1 < len(parts):
+            return parts[i + 1]
+    return None
