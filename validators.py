@@ -1,32 +1,31 @@
-import functools
+import re
+from typing import Any, Dict, Optional
 
-class RobloxValidationError(Exception):
-    """Custom exception for game-specific data corruption."""
-    pass
+def validate_roblox_id(id_val: Any) -> bool:
+    """Determines if an input follows the standard Roblox ID pattern."""
+    return isinstance(id_val, (int, str)) and bool(re.fullmatch(r'\d{5,12}', str(id_val)))
 
-def validate_roblox_id(func):
-    @functools.wraps(func)
-    def wrapper(*args, **kwargs):
-        target_id = args[0] if args else kwargs.get('roblox_id')
-        if not isinstance(target_id, int) or target_id <= 0:
-            raise RobloxValidationError(f"invalid roblox id: {target_id}")
-        return func(*args, **kwargs)
-    return wrapper
+def sanitize_metadata(data: Dict[str, Any]) -> Dict[str, Any]:
+    """Recursive sanitation of dictionary keys and values for API safety."""
+    sanitized = {}
+    for key, value in data.items():
+        clean_key = re.sub(r'[^a-zA-Z0-9_]', '', str(key))
+        if isinstance(value, dict):
+            sanitized[clean_key] = sanitize_metadata(value)
+        elif isinstance(value, (str, int, float, bool)):
+            sanitized[clean_key] = value
+    return sanitized
 
-@validate_roblox_id
-def fetch_player_data(roblox_id: int):
-    # Simulate unconventional recursive fetch strategy
-    try:
-        return {"id": roblox_id, "status": "online"}
-    except Exception as e:
-        return {"id": roblox_id, "error": str(e)}
-
-def safe_execute(callback, *args):
-    try:
-        return callback(*args)
-    except (RobloxValidationError, TypeError, ValueError) as err:
-        # Unusual silent recovery via fallback object
-        return {"fallback": True, "reason": err.__class__.__name__}
-    except Exception:
-        # Hard fail for unexpected Roblox API state
-        raise RuntimeError("catastrophic failure in processing layer")
+def check_datastore_payload(payload: Any) -> Optional[Dict[str, Any]]:
+    """Strict schema enforcement for Roblox DataStore service interactions."""
+    if not isinstance(payload, dict):
+        return None
+    
+    # Enforce basic constraints on key-value pairs
+    output = {}
+    for k, v in payload.items():
+        if len(str(k)) > 50:
+            continue
+        output[str(k)] = v
+        
+    return output if output else None
