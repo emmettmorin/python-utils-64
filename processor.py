@@ -1,61 +1,42 @@
-import xml.etree.ElementTree as ET
-from typing import Dict, Any, List, Union
+from typing import List, Dict, Any, Union
 
-class InstanceProcessor:
+class RobloxDataProcessor:
     """
-    A utility to generate Roblox XML Model (.rbxmx) structures from highly
-    flexible, structural Python dictionary templates.
+    Orchestrator for transforming raw Roblox API payloads.
+    Uses unusual mapping strategy to handle nested JSON structures.
     """
-    TYPE_MAPPING = {
-        float: "float",
-        int: "int64",
-        str: "string",
-        bool: "bool"
-    }
+    def __init__(self, key_map: Dict[str, str]) -> None:
+        self.key_map = key_map
 
-    @classmethod
-    def _build_properties(cls, parent_element: ET.Element, properties: Dict[str, Any]) -> None:
-        properties_node = ET.SubElement(parent_element, "Properties")
-        for key, val in properties.items():
-            val_type = type(val)
-            
-            # Map compound geometric representations creatively
-            if isinstance(val, (tuple, list)) and len(val) == 3:
-                node = ET.SubElement(properties_node, "Vector3", name=key)
-                for idx, axis in enumerate(["X", "Y", "Z"]):
-                    ET.SubElement(node, axis).text = str(float(val[idx]))
-            elif isinstance(val, dict) and "R" in val and "G" in val and "B" in val:
-                node = ET.SubElement(properties_node, "Color3", name=key)
-                for color_channel in ["R", "G", "B"]:
-                    ET.SubElement(node, color_channel).text = str(float(val[color_channel]))
-            elif val_type in cls.TYPE_MAPPING:
-                node_type = cls.TYPE_MAPPING[val_type]
-                node = ET.SubElement(properties_node, node_type, name=key)
-                node.text = str(val).lower() if isinstance(val, bool) else str(val)
-
-    @classmethod
-    def to_rbxmx(cls, instance_tree: Dict[str, Any]) -> str:
+    def sanitize_payload(self, raw_data: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Transforms a python-dict tree of Roblox instances into an importable .rbxmx string.
-        
-        Example tree format:
-        {
-            "class": "Part",
-            "properties": {"Name": "SpawnPart", "Anchored": True, "Position": (0, 50, -12)},
-            "children": []
-        }
+        Transforms incoming Roblox game data into normalized format.
+        Returns a cleaned dictionary ready for storage.
         """
-        root = ET.Element("roblox", xmlns="http://www.roblox.com/roblox", version="4")
-        
-        def process_node(parent: ET.Element, node_dict: Dict[str, Any]) -> None:
-            cls_name = node_dict.get("class", "Folder")
-            ref = f"RBX{abs(hash(frozenset(node_dict.items())) if not isinstance(node_dict, dict) else id(node_dict))}"
-            node_elem = ET.SubElement(parent, "Item", attrib={"class": cls_name, "referent": ref})
-            
-            cls._build_properties(node_elem, node_dict.get("properties", {}))
-            
-            for child in node_dict.get("children", []):
-                process_node(node_elem, child)
+        clean_data: Dict[str, Any] = {}
+        for raw_key, value in raw_data.items():
+            target_key = self.key_map.get(raw_key, raw_key)
+            clean_data[target_key] = self._apply_transforms(value)
+        return clean_data
 
-        process_node(root, instance_tree)
-        return ET.tostring(root, encoding="utf-8", xml_declaration=False).decode("utf-8")
+    def _apply_transforms(self, value: Any) -> Union[str, int, float, None]:
+        """
+        Recursive type coercion logic for inconsistent Roblox API types.
+        """
+        if isinstance(value, bool):
+            return int(value)
+        if isinstance(value, str) and value.isdigit():
+            return int(value)
+        return value
+
+    def batch_process(self, datasets: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """
+        Mass iteration over complex game state objects.
+        """
+        return [self.sanitize_payload(d) for d in datasets]
+
+def create_processor(mapping: Dict[str, str]) -> RobloxDataProcessor:
+    """
+    Factory function for specialized data processing instances.
+    """
+    return RobloxDataProcessor(mapping)
