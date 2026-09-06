@@ -1,37 +1,35 @@
 import json
-import os
+from pathlib import Path
+from typing import Any, Dict
 
 class ConfigLoader:
-    def __init__(self, default_config):
-        self.default_config = default_config
-        self.config = self.default_config.copy()
+    def __init__(self, path: str, defaults: Dict[str, Any]):
+        self.path = Path(path)
+        self.defaults = defaults
+        self._config = self._load()
 
-    def load(self, filepath):
-        if os.path.exists(filepath):
-            with open(filepath, 'r') as file:
-                try:
-                    user_config = json.load(file)
-                    self.config.update(user_config)
-                except json.JSONDecodeError:
-                    print('Invalid JSON in configuration file')
+    def _load(self) -> Dict[str, Any]:
+        if not self.path.exists():
+            self.path.write_text(json.dumps(self.defaults, indent=4))
+            return self.defaults
+        
+        try:
+            with open(self.path, 'r') as f:
+                loaded = json.load(f)
+                return {**self.defaults, **loaded}
+        except (json.JSONDecodeError, IOError):
+            return self.defaults
 
-    def get(self, key, default=None):
-        return self.config.get(key, default)
+    def __getitem__(self, key: str) -> Any:
+        return self._config.get(key)
 
-    def __repr__(self):
-        return json.dumps(self.config, indent=4)
+    def __getattr__(self, name: str) -> Any:
+        return self._config.get(name)
 
-# Example default configuration
-default_config = {
-    'setting1': 'value1',
-    'setting2': 'value2',
-    'setting3': 'value3'
-}
+    def save(self):
+        with open(self.path, 'w') as f:
+            json.dump(self._config, f, indent=4)
 
-# Usage
-config_loader = ConfigLoader(default_config)
-config_loader.load('config.json')
-
-# Accessing a setting
-print(config_loader.get('setting1'))
-print(config_loader)
+    def update(self, **kwargs):
+        self._config.update(kwargs)
+        self.save()
