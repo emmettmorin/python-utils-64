@@ -1,38 +1,47 @@
 # python-utils-64
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-
-python-utils-64 is a Python library tailored for Roblox developers, offering robust utilities to interact with Roblox's ecosystem. The package handles API requests, asset management, and file parsing to accelerate development and automation tasks.
+A high-performance Python toolkit designed for Roblox developers to streamline data manipulation and API interactions. This library simplifies complex workflows, allowing for faster integration between local Python environments and the Roblox ecosystem.
 
 ## Features
-- Authenticated access to Roblox APIs with automatic token management
-- Efficient downloading and caching of Roblox assets
-- Support for reading and writing Roblox XML and binary formats
-- Rate limit handling and retry mechanisms for reliable operations
+
+*   **RBXL Parser:** Efficiently read and process `.rbxl` file structures without needing the Roblox Studio client.
+*   **Asset Management:** Automated scripts for bulk-uploading textures and decals to the Roblox Creator Dashboard via the Open Cloud API.
+*   **Datastore Sync:** Seamlessly bridge external databases with Roblox Datastores, supporting key-value serialization for game persistence.
+*   **Luau Syntax Checker:** Built-in linting integration to validate script segments before pushing to Rojo-managed projects.
 
 ## Installation
 
-Install via pip:
+Install the package via pip:
 
 ```bash
 pip install python-utils-64
 ```
 
-Install from source:
+To enable the Open Cloud API integration, ensure you have your API Key exported in your environment:
 
 ```bash
-git clone https://github.com/developer/python-utils-64.git
-cd python-utils-64
-pip install -e .
+export ROBLOX_API_KEY='your-api-key-here'
 ```
 
 ## Basic Usage
 
-```python
-from python_utils_64 import RobloxClient
+Quickly fetch your game's current player count or metadata using the library:
 
-client = RobloxClient()
-game = client.get_game(1234567890)
-print(f"Game name: {game.name}")
-print(f"Player count: {game.playing}")
+```python
+from roblox_utils import RobloxClient
+
+client = RobloxClient(api_key="your_key")
+
+# Retrieve place information
+place_info = client.get_place_metadata(place_id=123456789)
+print(f"Current server count: {place_info.active_servers}")
+
+# Push a bulk update to the datastore
+client.datastore.update_entry("PlayerData", "user_123", {"level": 50})
 ```
+
+## License
+
+![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
