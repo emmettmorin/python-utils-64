@@ -1,42 +1,52 @@
-from typing import List, Dict, Any, Union
+import re
+import urllib.request
+import json
+from typing import Dict, Any, Generator
 
-class RobloxDataProcessor:
-    """
-    Orchestrator for transforming raw Roblox API payloads.
-    Uses unusual mapping strategy to handle nested JSON structures.
-    """
-    def __init__(self, key_map: Dict[str, str]) -> None:
-        self.key_map = key_map
+class RobloxAssetProcessor:
+    """Creative processor for Roblox asset resolution and security masking."""
+    
+    # Regex for various Roblox asset formats
+    ASSET_PATTERN = re.compile(r"(?:rbxassetid://|/asset/\?id=|roblox\.com/catalog/)(\d+)")
 
-    def sanitize_payload(self, raw_data: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Transforms incoming Roblox game data into normalized format.
-        Returns a cleaned dictionary ready for storage.
-        """
-        clean_data: Dict[str, Any] = {}
-        for raw_key, value in raw_data.items():
-            target_key = self.key_map.get(raw_key, raw_key)
-            clean_data[target_key] = self._apply_transforms(value)
-        return clean_data
+    def __init__(self, cookie: str = None):
+        self._cookie = cookie
 
-    def _apply_transforms(self, value: Any) -> Union[str, int, float, None]:
-        """
-        Recursive type coercion logic for inconsistent Roblox API types.
-        """
-        if isinstance(value, bool):
-            return int(value)
-        if isinstance(value, str) and value.isdigit():
-            return int(value)
-        return value
+    @property
+    def masked_cookie(self) -> str:
+        """Masks the sensitive .ROBLOSECURITY token for safe logging."""
+        if not self._cookie:
+            return ""
+        parts = self._cookie.split("_|WARNINGExternal-")
+        target = parts[-1] if parts else self._cookie
+        return f"WarningMasked...{target[-20:] if len(target) > 20 else '...'}"
 
-    def batch_process(self, datasets: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        """
-        Mass iteration over complex game state objects.
-        """
-        return [self.sanitize_payload(d) for d in datasets]
+    def extract_asset_ids(self, text: str) -> Generator[int, None, None]:
+        """Extracts all Roblox asset IDs found within a string or script source."""
+        for match in self.ASSET_PATTERN.finditer(text):
+            yield int(match.group(1))
 
-def create_processor(mapping: Dict[str, str]) -> RobloxDataProcessor:
-    """
-    Factory function for specialized data processing instances.
-    """
-    return RobloxDataProcessor(mapping)
+    def fetch_universe_info(self, place_id: int) -> Dict[str, Any]:
+        """Retrieves universe information for a given Place ID using Roblox API."""
+        url = f"https://apis.roblox.com/universes/v1/places/{place_id}/universe"
+        headers = {"User-Agent": "RobloxUtils64/1.0"}
+        if self._cookie:
+            headers["Cookie"] = f".ROBLOSECURITY={self._cookie}"
+            
+        req = urllib.request.Request(url, headers=headers)
+        try:
+            with urllib.request.urlopen(req, timeout=5) as response:
+                return json.loads(response.read().decode('utf-8'))
+        except Exception as e:
+            return {"error": str(e), "placeId": place_id, "universeId": None}
+
+    def compile_manifest(self, source_code: str) -> Dict[int, Dict[str, Any]]:
+        """Processes source code, extracts asset IDs, and maps them to dynamic configurations."""
+        return {
+            asset_id: {
+                "resolved_url": f"https://assetdelivery.roblox.com/v1/asset/?id={asset_id}",
+                "cdn_link": f"rbxassetid://{asset_id}",
+                "processed_status": "resolved"
+            }
+            for asset_id in self.extract_asset_ids(source_code)
+        }
