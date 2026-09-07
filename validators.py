@@ -1,31 +1,35 @@
-import re
-from typing import Any, Dict, Optional
+import time
+import functools
+import random
 
-def validate_roblox_id(id_val: Any) -> bool:
-    """Determines if an input follows the standard Roblox ID pattern."""
-    return isinstance(id_val, (int, str)) and bool(re.fullmatch(r'\d{5,12}', str(id_val)))
+def retry_request(max_retries=3, base_delay=1.0, backoff=2.0):
+    def decorator(func):
+        @functools.wraps(func)
+        def wrapper(*args, **kwargs):
+            last_exception = None
+            current_delay = base_delay
+            for attempt in range(max_retries):
+                try:
+                    return func(*args, **kwargs)
+                except Exception as e:
+                    last_exception = e
+                    if attempt == max_retries - 1:
+                        break
+                    time.sleep(current_delay + random.uniform(0, 0.1))
+                    current_delay *= backoff
+            raise last_exception
+        return wrapper
+    return decorator
 
-def sanitize_metadata(data: Dict[str, Any]) -> Dict[str, Any]:
-    """Recursive sanitation of dictionary keys and values for API safety."""
-    sanitized = {}
-    for key, value in data.items():
-        clean_key = re.sub(r'[^a-zA-Z0-9_]', '', str(key))
-        if isinstance(value, dict):
-            sanitized[clean_key] = sanitize_metadata(value)
-        elif isinstance(value, (str, int, float, bool)):
-            sanitized[clean_key] = value
-    return sanitized
+def validate_roblox_response(response):
+    if response is None:
+        return False
+    if hasattr(response, 'status_code'):
+        return 200 <= response.status_code < 300
+    return isinstance(response, dict) and 'success' in response and response['success'] is True
 
-def check_datastore_payload(payload: Any) -> Optional[Dict[str, Any]]:
-    """Strict schema enforcement for Roblox DataStore service interactions."""
-    if not isinstance(payload, dict):
-        return None
-    
-    # Enforce basic constraints on key-value pairs
-    output = {}
-    for k, v in payload.items():
-        if len(str(k)) > 50:
-            continue
-        output[str(k)] = v
-        
-    return output if output else None
+class RobloxNetworkValidator:
+    @staticmethod
+    def is_valid_payload(data):
+        required_fields = ['universeId', 'placeId']
+        return all(field in data for field in required_fields)
