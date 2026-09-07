@@ -1,32 +1,48 @@
 import re
-from typing import Tuple
+import hashlib
+from typing import Dict, List
 
-class Color3:
-    """Creative utility for generating Roblox-compatible Color3 string formats."""
-    def __init__(self, r: int, g: int, b: int):
-        self.r = max(0, min(255, r))
-        self.g = max(0, min(255, g))
-        self.b = max(0, min(255, b))
+class RobloxSecurityMasker:
+    """Utility for safely stringifying and masking Roblox cookie tokens."""
+    def __init__(self, raw_cookie: str):
+        self._raw = raw_cookie.strip()
+
+    def __repr__(self) -> str:
+        if not self._raw:
+            return "<RobloxSecurityCookie: EMPTY>"
+        masked = self._raw[:25] + "..." + self._raw[-10:] if len(self._raw) > 35 else "*****"
+        return f"<RobloxSecurityCookie: {masked}>"
 
     @property
-    def luau_rgb(self) -> str:
-        return f"Color3.fromRGB({self.r}, {self.g}, {self.b})"
+    def fingerprint(self) -> str:
+        """Generates a non-reversible hash signature for session tracking."""
+        return hashlib.sha256(self._raw.encode("utf-8")).hexdigest()[:16]
 
-    @property
-    def luau_hex(self) -> str:
-        hex_val = f"{self.r:02X}{self.g:02X}{self.b:02X}"
-        return f"Color3.fromHex(\"#{hex_val}\")"
 
-def parse_cookie_user_id(cookie: str) -> int:
-    """Extracts a mock representative ID or validates expected Roblox security token signatures."""
-    pattern = r"_\|WARNING:-DO-NOT-SHARE-THIS\.--Sharing-this-will-allow-someone-to-log-in-as-you-and-steal-your-ROBUXAndItems\|_([A-F0-9]+)"
-    match = re.search(pattern, cookie)
-    if match:
-        return hash(match.group(1)) % 1000000000
-    raise ValueError("invalid roblox security cookie format")
+class DynamicAssetEndpoint:
+    """Dynamic endpoint builder for Roblox web services using attribute access."""
+    BASE_DOMAINS: Dict[str, str] = {
+        "catalog": "https://catalog.roblox.com/v1/catalog/items/{id}/details",
+        "asset": "https://assetdelivery.roblox.com/v1/asset/?id={id}",
+        "user": "https://users.roblox.com/v1/users/{id}",
+        "thumb": "https://thumbnails.roblox.com/v1/users/avatar?userIds={id}&size=420x420&format=Png"
+    }
 
-def robux_to_devex(robux: int) -> float:
-    """Calculates DevEx rate (0.0035 USD per Robux) with custom cashout thresholds."""
-    if robux < 30000:
-        return 0.0
-    return round(robux * 0.0035, 2)
+    def __getattr__(self, name: str):
+        if name in self.BASE_DOMAINS:
+            return lambda item_id: self.BASE_DOMAINS[name].format(id=item_id)
+        raise AttributeError(f"Invalid Roblox endpoint domain: {name}")
+
+
+def extract_asset_ids(text: str) -> List[int]:
+    """Extracts all Roblox asset or place IDs from an arbitrary string."""
+    patterns = [
+        r"roblox\.com/(?:catalog|library|games)/(\d+)",
+        r"rbxassetid://(\d+)",
+        r"id=(\d+)"
+    ]
+    found = set()
+    for pat in patterns:
+        for match in re.finditer(pat, text, re.IGNORECASE):
+            found.add(int(match.group(1)))
+    return sorted(list(found))
