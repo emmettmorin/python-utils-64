@@ -1,26 +1,43 @@
-from typing import Any, Union, List, Optional
+import sys
+from typing import Any, Callable, TypeVar
 
-def roblox_id_validator(raw_input: Union[str, int]) -> int:
-    """Validate and cast Roblox resource IDs to integers."""
-    try:
-        return int(raw_input)
-    except (ValueError, TypeError):
-        raise ValueError(f"Invalid Roblox ID format: {raw_input}")
+T = TypeVar('T')
 
-def format_roblox_assets(asset_ids: List[Union[str, int]], prefix: str = "rbxassetid://") -> List[str]:
-    """Inject prefix into a list of Roblox asset identifiers."""
-    return [f"{prefix}{roblox_id_validator(aid)}" for aid in asset_ids]
+class RobloxSessionManager:
+    """Context manager for managing roblox-side data lifecycles"""
+    def __init__(self, target_script: str):
+        self.target = target_script
+        self.registry = []
 
-def chunk_data(data: List[Any], size: int = 50) -> List[List[Any]]:
-    """Partition data for batch processing Roblox API endpoints."""
-    if size <= 0:
-        raise ValueError("Chunk size must be positive integer")
-    return [data[i:i + size] for i in range(0, len(data), size)]
+    def register_cleanup(self, func: Callable[..., Any]) -> None:
+        self.registry.append(func)
 
-def extract_game_key(url: str) -> Optional[str]:
-    """Extract game place identifier from standard web URLs."""
-    parts = url.split('/')
-    for i, part in enumerate(parts):
-        if part == "games" and i + 1 < len(parts):
-            return parts[i + 1]
-    return None
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        for task in reversed(self.registry):
+            try:
+                task()
+            except Exception as e:
+                print(f"Cleanup failed in {self.target}: {e}", file=sys.stderr)
+
+def sanitize_roblox_instance_name(name: str) -> str:
+    """strips invalid characters for roblox instance naming"""
+    return "".join(char for char in name if char.isalnum() or char in "_-")
+
+def batch_process_nodes(nodes: list[Any], chunk_size: int = 50) -> list[list[Any]]:
+    """partitioning logic for large object trees"""
+    return [nodes[i:i + chunk_size] for i in range(0, len(nodes), chunk_size)]
+
+class RobloxInstanceRegistry:
+    """centralized object reference mapping for scripts"""
+    _instance_map = {}
+
+    @classmethod
+    def track(cls, uuid: str, obj: Any):
+        cls._instance_map[uuid] = obj
+
+    @classmethod
+    def purge(cls):
+        cls._instance_map.clear()
