@@ -1,40 +1,47 @@
-import sys
-import threading
-from typing import Dict, Any, Tuple, List
+import time
+import random
+from functools import wraps
+from typing import Callable, Any
 
-class FastRobloxInstance:
+class RobloxAPIError(Exception):
+    """Exception raised when Roblox API request retries are exhausted."""
+    pass
+
+def retry_on_ratelimit(max_retries: int = 4, base_delay: float = 1.0):
     """
-    Thread-safe optimized instance builder leveraging custom slot pools
-    and string interning to optimize memory and property lookup speed
-    when parsing heavy Roblox model files (RBXL/RBXM).
+    A creative decorator to handle Roblox-specific API rate limits (HTTP 429)
+    and unexpected connection drops with dynamic backoff.
     """
-    _class_cache: Dict[Tuple[str, Tuple[str, ...]], type] = {}
-    _lock = threading.Lock()
-
-    @classmethod
-    def build(cls, class_name: str, data: Dict[str, Any]) -> Any:
-        # Intern class name and keys to save memory and optimize lookup
-        interned_name = sys.intern(class_name)
-        sorted_keys = tuple(sys.intern(k) for k in sorted(data.keys()))
-        cache_key = (interned_name, sorted_keys)
-
-        with cls._lock:
-            optimized_class = cls._class_cache.get(cache_key)
-            if not optimized_class:
-                optimized_class = type(
-                    f"Fast_{interned_name}",
-                    (object,),
-                    {"__slots__": sorted_keys, "ClassName": interned_name}
-                )
-                cls._class_cache[cache_key] = optimized_class
-
-        instance = optimized_class()
-        for key, value in data.items():
-            setattr(instance, sys.intern(key), value)
-        return instance
-
-    @classmethod
-    def bulk_build(cls, records: List[Tuple[str, Dict[str, Any]]]) -> List[Any]:
-        # Micro-optimized bulk processing loop using localized lookups
-        build_func = cls.build
-        return [build_func(class_name, data) for class_name, data in records]
+    def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
+        @wraps(func)
+        def wrapper(*args: Any, **kwargs: Any) -> Any:
+            retries = 0
+            while True:
+                try:
+                    response = func(*args, **kwargs)
+                    status = getattr(response, 'status_code', getattr(response, 'status', 200))
+                    
+                    if status == 429:
+                        if retries >= max_retries:
+                            return response
+                        
+                        headers = getattr(response, 'headers', {})
+                        retry_after = headers.get('retry-after') or headers.get('Retry-After')
+                        
+                        if retry_after and str(retry_after).isdigit():
+                            wait_time = float(retry_after)
+                        else:
+                            wait_time = base_delay * (2 ** retries) + random.uniform(0.1, 0.5)
+                        
+                        time.sleep(wait_time)
+                        retries += 1
+                        continue
+                    return response
+                except Exception as err:
+                    if retries >= max_retries:
+                        raise RobloxAPIError(f'Failed after {max_retries} attempts') from err
+                    
+                    time.sleep(base_delay * (2 ** retries) + random.uniform(0.1, 0.5))
+                    retries += 1
+        return wrapper
+    return decorator
