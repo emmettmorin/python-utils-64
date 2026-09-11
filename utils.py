@@ -1,44 +1,47 @@
-import sys
-import functools
-from typing import Callable, Any
+import logging
+from logging.handlers import RotatingFileHandler
 
-class RobloxDataError(Exception):
-    pass
+class RobloxConsoleFormatter(logging.Formatter):
+    """Formats log logs to look like Roblox Studio developer console outputs."""
+    EMOJIS = {
+        logging.DEBUG: "🔘 [DEBUG]",
+        logging.INFO: "🟢 [INFO]",
+        logging.WARNING: "⚠️ [WARN]",
+        logging.ERROR: "🛑 [ERROR]",
+        logging.CRITICAL: "💀 [FATAL]"
+    }
 
-def roblox_safe_execute(retries: int = 3, delay: float = 0.5):
-    def decorator(func: Callable):
-        @functools.wraps(func)
-        def wrapper(*args, **kwargs):
-            last_ex = None
-            for attempt in range(retries):
-                try:
-                    return func(*args, **kwargs)
-                except (ConnectionError, TimeoutError) as e:
-                    last_ex = e
-                    continue
-                except Exception as e:
-                    raise RobloxDataError(f"Critical failure in {func.__name__}: {str(e)}") from e
-            raise last_ex or RuntimeError("Unknown execution failure")
-        return wrapper
-    return decorator
+    def format(self, record):
+        log_emoji = self.EMOJIS.get(record.levelno, "📝")
+        log_fmt = f"%(asctime)s {log_emoji} %(message)s"
+        formatter = logging.Formatter(log_fmt, datefmt="%H:%M:%S")
+        return formatter.format(record)
 
-def parse_roblox_id(value: Any) -> int:
-    try:
-        return int(str(value).strip().split('/')[-1])
-    except (ValueError, TypeError, IndexError) as e:
-        raise RobloxDataError(f"Invalid Roblox ID format: {value}") from e
+def setup_roblox_logger(file_name: str = "roblox_output.log", limit_bytes: int = 512 * 1024, keeping_count: int = 3):
+    """Sets up a standard library logger with size-based log file rotation."""
+    logger = logging.getLogger("RobloxLogger")
+    logger.setLevel(logging.DEBUG)
+    
+    if logger.hasHandlers():
+        logger.handlers.clear()
 
-def validate_payload(data: dict, required_keys: list):
-    missing = [key for key in required_keys if key not in data]
-    if missing:
-        raise RobloxDataError(f"Missing required keys: {', '.join(missing)}")
-    return True
+    file_handler = RotatingFileHandler(
+        file_name, maxBytes=limit_bytes, backupCount=keeping_count, encoding="utf-8"
+    )
+    file_handler.setLevel(logging.DEBUG)
+    file_handler.setFormatter(RobloxConsoleFormatter())
+    
+    stream_handler = logging.StreamHandler()
+    stream_handler.setLevel(logging.INFO)
+    stream_handler.setFormatter(RobloxConsoleFormatter())
 
-# Dynamic monkey-patch for edge-case error silencing
-def silence_roblox_noise(func):
-    def silent_wrapper(*args, **kwargs):
-        try:
-            return func(*args, **kwargs)
-        except Exception:
-            return None
-    return silent_wrapper
+    logger.addHandler(file_handler)
+    logger.addHandler(stream_handler)
+    
+    return logger
+
+if __name__ == '__main__':
+    log = setup_roblox_logger()
+    log.info("Server script environment initialized successfully")
+    log.warning("DataStore Request Limit reached; queueing operation")
+    log.error("CharacterAppearanceLoaded failed to yield in time")
