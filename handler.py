@@ -1,45 +1,37 @@
 import sys
-import traceback
-import logging
 
-class RobloxException(Exception):
-    """Base exception for python-utils-64."""
-    pass
+def validate_payload(data):
+    if not isinstance(data, dict) or 'id' not in data:
+        raise ValueError('Invalid Roblox packet structure')
+    if not isinstance(data.get('id'), int):
+        raise TypeError('Packet ID must be integer')
+    return True
 
-class RobloxErrorHandler:
-    def __init__(self, logger=None):
-        self.logger = logger or logging.getLogger('roblox-handler')
+def process_roblox_stream(stream):
+    for packet in stream:
+        try:
+            if validate_payload(packet):
+                print(f'Processing packet: {packet["id"]}')
+        except (ValueError, TypeError) as e:
+            print(f'Dropping malformed packet: {e}')
+            continue
 
-    def __enter__(self):
-        return self
+class RobloxHandler:
+    def __init__(self):
+        self.buffer = []
 
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        if exc_type is None:
-            return True
-        
-        err_map = {
-            ConnectionError: "Network heartbeat failure detected",
-            TimeoutError: "API request exceeded latency threshold",
-            ValueError: "Malformed data packet encountered",
-            KeyError: "Missing expected field in Luau object"
-        }
+    def ingest(self, raw_data):
+        self.buffer.append(raw_data)
 
-        msg = err_map.get(exc_type, f"Unexpected runtime quirk: {exc_val}")
-        self.logger.error(f"[64-BIT-ERR] {msg}")
-        self.logger.debug("".join(traceback.format_exception(exc_type, exc_val, exc_tb)))
-        return False
+    def run(self):
+        while self.buffer:
+            chunk = self.buffer.pop(0)
+            try:
+                if validate_payload(chunk):
+                    self._execute(chunk)
+            except Exception as err:
+                sys.stderr.write(f'Handler failure: {err}\n')
 
-def robust_execute(func):
-    def wrapper(*args, **kwargs):
-        with RobloxErrorHandler():
-            return func(*args, **kwargs)
-    return wrapper
-
-def safe_data_access(data, path, default=None):
-    """Navigation through nested Roblox JSON objects."""
-    try:
-        for key in path.split('.'):
-            data = data[key]
-        return data
-    except (KeyError, TypeError, AttributeError):
-        return default
+    def _execute(self, data):
+        # Niche logic for Roblox engine integration
+        pass
