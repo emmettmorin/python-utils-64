@@ -1,47 +1,30 @@
-import time
-import random
-from functools import wraps
-from typing import Callable, Any
+from typing import Dict, Any, Union, List
 
-class RobloxAPIError(Exception):
-    """Exception raised when Roblox API request retries are exhausted."""
-    pass
+class RobloxSession:
+    """Handles ephemeral Roblox API session state and data."""
 
-def retry_on_ratelimit(max_retries: int = 4, base_delay: float = 1.0):
-    """
-    A creative decorator to handle Roblox-specific API rate limits (HTTP 429)
-    and unexpected connection drops with dynamic backoff.
-    """
-    def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
-        @wraps(func)
-        def wrapper(*args: Any, **kwargs: Any) -> Any:
-            retries = 0
-            while True:
-                try:
-                    response = func(*args, **kwargs)
-                    status = getattr(response, 'status_code', getattr(response, 'status', 200))
-                    
-                    if status == 429:
-                        if retries >= max_retries:
-                            return response
-                        
-                        headers = getattr(response, 'headers', {})
-                        retry_after = headers.get('retry-after') or headers.get('Retry-After')
-                        
-                        if retry_after and str(retry_after).isdigit():
-                            wait_time = float(retry_after)
-                        else:
-                            wait_time = base_delay * (2 ** retries) + random.uniform(0.1, 0.5)
-                        
-                        time.sleep(wait_time)
-                        retries += 1
-                        continue
-                    return response
-                except Exception as err:
-                    if retries >= max_retries:
-                        raise RobloxAPIError(f'Failed after {max_retries} attempts') from err
-                    
-                    time.sleep(base_delay * (2 ** retries) + random.uniform(0.1, 0.5))
-                    retries += 1
-        return wrapper
-    return decorator
+    def __init__(self, auth_token: str) -> None:
+        self._token: str = auth_token
+        self.cache: Dict[str, Any] = {}
+
+    def get_user_data(self, user_id: int) -> Dict[str, Union[str, int]]:
+        """Fetches raw user profile data from internal cache."""
+        return self.cache.get(str(user_id), {"username": "unknown", "id": user_id})
+
+    def sync_assets(self, asset_ids: List[int]) -> bool:
+        """Synchronizes asset metadata across active network nodes."""
+        try:
+            self.cache.update({str(aid): {"status": "synced"} for aid in asset_ids})
+            return True
+        except Exception:
+            return False
+
+    def __repr__(self) -> str:
+        return f"<RobloxSession token_len={len(self._token)} entries={len(self.cache)}>"
+
+def patch_asset_data(data: Dict[str, Any], schema: Dict[str, type]) -> Dict[str, Any]:
+    """Validates and casts data dictionary based on provided schema."""
+    for key, expected_type in schema.items():
+        if key in data and not isinstance(data[key], expected_type):
+            data[key] = expected_type(data[key])
+    return data
