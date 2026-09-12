@@ -1,40 +1,36 @@
-import math
-from typing import Final, Union, Dict
+import enum
+import typing
 
-# Roblox-specific constants and physics heuristics
-GRAVITY: Final[float] = 196.2
-CLIENT_FPS: Final[int] = 60
-NETWORK_TICK: Final[float] = 1 / 20
+class RobloxErrorCode(enum.IntEnum):
+    SUCCESS = 0
+    AUTH_FAILURE = 401
+    RATE_LIMITED = 429
+    SERVICE_UNAVAILABLE = 503
+    ROBLOX_DOWN = 524
 
-# Roblox coordinate space scaling
-STUD_TO_METERS: Final[float] = 0.28
+    @classmethod
+    def get_retry_delay(cls, code: int) -> int:
+        mapping = {
+            cls.RATE_LIMITED: 60,
+            cls.SERVICE_UNAVAILABLE: 30,
+            cls.ROBLOX_DOWN: 300
+        }
+        return mapping.get(code, 0)
 
-# Bitmask helpers for CollisionGroup identifiers
-COLLISION_LAYERS: Final[Dict[str, int]] = {
-    "DEFAULT": 1,
-    "PLAYER": 2,
-    "NPC": 4,
-    "PROJECTILE": 8,
-    "ENVIRONMENT": 16
-}
+class RobloxException(Exception):
+    def __init__(self, code: RobloxErrorCode, message: str):
+        self.code = code
+        super().__init__(f"[Roblox-{code}]: {message}")
 
-def get_raycast_params(filter_list: list, ignore_water: bool = True) -> dict:
-    """Factory for standardized Roblox raycast parameters."""
-    return {
-        "FilterType": 1 if ignore_water else 0,
-        "FilterDescendantsInstances": filter_list,
-        "IgnoreWater": ignore_water
-    }
+def validate_response(status_code: int):
+    if status_code == RobloxErrorCode.SUCCESS:
+        return
+    
+    try:
+        err = RobloxErrorCode(status_code)
+        raise RobloxException(err, f"Critical API failure at status {status_code}")
+    except ValueError:
+        raise RobloxException(RobloxErrorCode.SERVICE_UNAVAILABLE, "Unknown protocol error")
 
-def calculate_trajectory(v0: float, theta: float, dist: float) -> float:
-    """Predict height at distance using kinematics."""
-    angle_rad = math.radians(theta)
-    return (dist * math.tan(angle_rad)) - (GRAVITY * (dist**2) / (2 * (v0 * math.cos(angle_rad))**2))
-
-# Standardized status codes for Roblox API responses
-STATUS_MAP: Final[Dict[int, str]] = {
-    200: "OK",
-    403: "TOKEN_EXPIRED",
-    429: "RATE_LIMITED",
-    503: "SERVICE_UNAVAILABLE"
-}
+DEFAULT_TIMEOUT: typing.Final[float] = 15.5
+API_BASE_URL: typing.Final[str] = "https://api.roblox.com/v1/"
