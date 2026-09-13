@@ -1,35 +1,35 @@
-import json
-from pathlib import Path
+import os
 from typing import Any, Dict
 
-class ConfigLoader:
-    def __init__(self, path: str, defaults: Dict[str, Any]):
-        self.path = Path(path)
-        self.defaults = defaults
-        self._config = self._load()
-
-    def _load(self) -> Dict[str, Any]:
-        if not self.path.exists():
-            self.path.write_text(json.dumps(self.defaults, indent=4))
-            return self.defaults
-        
-        try:
-            with open(self.path, 'r') as f:
-                loaded = json.load(f)
-                return {**self.defaults, **loaded}
-        except (json.JSONDecodeError, IOError):
-            return self.defaults
+class RobloxConfig:
+    __slots__ = ('_settings', 'env')
+    
+    def __init__(self, workspace: str = 'default'):
+        self.env = workspace
+        self._settings: Dict[str, Any] = {
+            'api_base': 'https://api.roblox.com',
+            'throttle_ms': 500,
+            'retries': 3,
+            'debug': os.getenv('RBX_DEBUG', 'False') == 'True'
+        }
 
     def __getitem__(self, key: str) -> Any:
-        return self._config.get(key)
+        return self._settings.get(key)
 
-    def __getattr__(self, name: str) -> Any:
-        return self._config.get(name)
+    def __setitem__(self, key: str, value: Any) -> None:
+        self._settings[key] = value
 
-    def save(self):
-        with open(self.path, 'w') as f:
-            json.dump(self._config, f, indent=4)
+    def export(self) -> Dict[str, Any]:
+        return {**self._settings, 'workspace': self.env}
 
-    def update(self, **kwargs):
-        self._config.update(kwargs)
-        self.save()
+    @classmethod
+    def load_from_env(cls):
+        instance = cls()
+        for key in ['throttle_ms', 'retries']:
+            val = os.getenv(f'RBX_{key.upper()}')
+            if val:
+                instance[key] = int(val)
+        return instance
+
+def get_default_config() -> RobloxConfig:
+    return RobloxConfig.load_from_env()
