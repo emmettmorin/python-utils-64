@@ -1,47 +1,46 @@
-import logging
-from logging.handlers import RotatingFileHandler
+import time
+import random
+import urllib.error
+import urllib.request
+from typing import Callable, TypeVar, Any, Generator
 
-class RobloxConsoleFormatter(logging.Formatter):
-    """Formats log logs to look like Roblox Studio developer console outputs."""
-    EMOJIS = {
-        logging.DEBUG: "🔘 [DEBUG]",
-        logging.INFO: "🟢 [INFO]",
-        logging.WARNING: "⚠️ [WARN]",
-        logging.ERROR: "🛑 [ERROR]",
-        logging.CRITICAL: "💀 [FATAL]"
-    }
+T = TypeVar("T")
 
-    def format(self, record):
-        log_emoji = self.EMOJIS.get(record.levelno, "📝")
-        log_fmt = f"%(asctime)s {log_emoji} %(message)s"
-        formatter = logging.Formatter(log_fmt, datefmt="%H:%M:%S")
-        return formatter.format(record)
+def fibonacci_jitter_backoff(base: float = 0.5, max_delay: float = 30.0) -> Generator[float, None, None]:
+    """Yields retry delays using Fibonacci progression combined with random jitter."""
+    a, b = base, base
+    while True:
+        jitter = random.uniform(0.85, 1.25)
+        yield min(a * jitter, max_delay)
+        a, b = b, a + b
 
-def setup_roblox_logger(file_name: str = "roblox_output.log", limit_bytes: int = 512 * 1024, keeping_count: int = 3):
-    """Sets up a standard library logger with size-based log file rotation."""
-    logger = logging.getLogger("RobloxLogger")
-    logger.setLevel(logging.DEBUG)
-    
-    if logger.hasHandlers():
-        logger.handlers.clear()
+def roblox_retry(max_attempts: int = 4, base_delay: float = 0.5) -> Callable:
+    """Decorator to retry network requests to Roblox endpoints with HTTP awareness."""
+    def decorator(func: Callable[..., T]) -> Callable[..., T]:
+        def wrapper(*args: Any, **kwargs: Any) -> T:
+            delays = fibonacci_jitter_backoff(base=base_delay)
+            last_err = None
+            for attempt in range(1, max_attempts + 1):
+                try:
+                    return func(*args, **kwargs)
+                except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError) as err:
+                    last_err = err
+                    if isinstance(err, urllib.error.HTTPError) and 400 <= err.code < 500 and err.code != 429:
+                        raise err
+                    if attempt < max_attempts:
+                        retry_after = getattr(err, "headers", {}).get("Retry-After") if isinstance(err, urllib.error.HTTPError) else None
+                        wait_sec = float(retry_after) if retry_after and retry_after.isdigit() else next(delays)
+                        time.sleep(wait_sec)
+            if last_err:
+                raise last_err
+            raise RuntimeError("Execution failed after maximum retries")
+        return wrapper
+    return decorator
 
-    file_handler = RotatingFileHandler(
-        file_name, maxBytes=limit_bytes, backupCount=keeping_count, encoding="utf-8"
-    )
-    file_handler.setLevel(logging.DEBUG)
-    file_handler.setFormatter(RobloxConsoleFormatter())
-    
-    stream_handler = logging.StreamHandler()
-    stream_handler.setLevel(logging.INFO)
-    stream_handler.setFormatter(RobloxConsoleFormatter())
-
-    logger.addHandler(file_handler)
-    logger.addHandler(stream_handler)
-    
-    return logger
-
-if __name__ == '__main__':
-    log = setup_roblox_logger()
-    log.info("Server script environment initialized successfully")
-    log.warning("DataStore Request Limit reached; queueing operation")
-    log.error("CharacterAppearanceLoaded failed to yield in time")
+@roblox_retry(max_attempts=3, base_delay=0.4)
+def fetch_roblox_api(endpoint: str) -> bytes:
+    """Fetches raw data from a specified Roblox REST endpoint safely."""
+    url = f"https://api.roblox.com/{endpoint.lstrip('/')}"
+    req = urllib.request.Request(url, headers={"User-Agent": "RobloxUtils64/1.0"})
+    with urllib.request.urlopen(req, timeout=10) as resp:
+        return resp.read()
