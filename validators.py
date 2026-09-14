@@ -1,35 +1,38 @@
-import time
-import functools
-import random
+import re
+from typing import Any, Union
 
-def retry_request(max_retries=3, base_delay=1.0, backoff=2.0):
-    def decorator(func):
-        @functools.wraps(func)
-        def wrapper(*args, **kwargs):
-            last_exception = None
-            current_delay = base_delay
-            for attempt in range(max_retries):
-                try:
-                    return func(*args, **kwargs)
-                except Exception as e:
-                    last_exception = e
-                    if attempt == max_retries - 1:
-                        break
-                    time.sleep(current_delay + random.uniform(0, 0.1))
-                    current_delay *= backoff
-            raise last_exception
-        return wrapper
-    return decorator
-
-def validate_roblox_response(response):
-    if response is None:
-        return False
-    if hasattr(response, 'status_code'):
-        return 200 <= response.status_code < 300
-    return isinstance(response, dict) and 'success' in response and response['success'] is True
-
-class RobloxNetworkValidator:
+class RobloxValidator:
+    """Utility suite for Roblox-specific data validation."""
+    
     @staticmethod
-    def is_valid_payload(data):
-        required_fields = ['universeId', 'placeId']
-        return all(field in data for field in required_fields)
+    def validate_asset_id(asset_id: Any) -> int:
+        target = str(asset_id)
+        if not target.isdigit():
+            raise ValueError(f"Invalid Asset ID format: {target}")
+        return int(target)
+
+    @staticmethod
+    def sanitize_username(username: str) -> str:
+        """Strips non-alphanumeric chars for API requests."""
+        return re.sub(r'[^a-zA-Z0-9_]', '', username)
+
+    @classmethod
+    def validate_universe_id(cls, universe_id: Union[int, str]) -> int:
+        try:
+            val = int(universe_id)
+            if val <= 0:
+                raise ValueError
+            return val
+        except (ValueError, TypeError):
+            raise ValueError(f"Invalid Universe ID: {universe_id}")
+
+    @staticmethod
+    def check_rate_limit_header(headers: dict) -> bool:
+        """Inspects Roblox response headers for rate limit signals."""
+        return 'Retry-After' in headers or headers.get('X-RateLimit-Limit') == '0'
+
+def validate_payload(data: dict, required_keys: list):
+    missing = [key for key in required_keys if key not in data]
+    if missing:
+        raise KeyError(f"Payload missing required Roblox fields: {', '.join(missing)}")
+    return True
