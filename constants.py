@@ -1,36 +1,39 @@
-import enum
-import typing
+from typing import Final, Dict, Any
 
-class RobloxErrorCode(enum.IntEnum):
-    SUCCESS = 0
-    AUTH_FAILURE = 401
-    RATE_LIMITED = 429
-    SERVICE_UNAVAILABLE = 503
-    ROBLOX_DOWN = 524
+# Roblox API endpoints and configuration headers
+API_BASE_URL: Final[str] = "https://apis.roblox.com"
+ROBLOX_USER_AGENT: Final[str] = "python-utils-64/1.0.0 (Roblox-Automation-Toolkit)"
 
-    @classmethod
-    def get_retry_delay(cls, code: int) -> int:
-        mapping = {
-            cls.RATE_LIMITED: 60,
-            cls.SERVICE_UNAVAILABLE: 30,
-            cls.ROBLOX_DOWN: 300
+# Rate limiting configuration constants
+RATE_LIMIT_COOLDOWN: Final[float] = 0.5
+MAX_RETRIES: Final[int] = 3
+
+# Standardized error codes map for internal handlers
+ERROR_MAP: Final[Dict[int, str]] = {
+    403: "X-CSRF-TOKEN Required",
+    429: "Too Many Requests",
+    500: "Roblox Internal Server Error"
+}
+
+class RobloxConstants:
+    """
+    Namespace container for engine-specific constants.
+    Provides structured access to environment-specific values.
+    """
+    def __init__(self) -> None:
+        self._data: Dict[str, Any] = {
+            "universe_id": 0,
+            "place_id": 0,
+            "debug_mode": False
         }
-        return mapping.get(code, 0)
 
-class RobloxException(Exception):
-    def __init__(self, code: RobloxErrorCode, message: str):
-        self.code = code
-        super().__init__(f"[Roblox-{code}]: {message}")
+    def get(self, key: str) -> Any:
+        """Retrieve constant value by key string."""
+        return self._data.get(key)
 
-def validate_response(status_code: int):
-    if status_code == RobloxErrorCode.SUCCESS:
-        return
-    
-    try:
-        err = RobloxErrorCode(status_code)
-        raise RobloxException(err, f"Critical API failure at status {status_code}")
-    except ValueError:
-        raise RobloxException(RobloxErrorCode.SERVICE_UNAVAILABLE, "Unknown protocol error")
+    def set_debug(self, status: bool) -> None:
+        """Toggle debug verbosity for the module."""
+        self._data["debug_mode"] = status
 
-DEFAULT_TIMEOUT: typing.Final[float] = 15.5
-API_BASE_URL: typing.Final[str] = "https://api.roblox.com/v1/"
+# Global instance for easy access across the package
+CONFIG: Final[RobloxConstants] = RobloxConstants()
