@@ -1,35 +1,35 @@
 import time
 import functools
-import random
+from typing import Callable, Any
 
-def retry_network_op(max_attempts=3, delay=1.0, backoff=2.0):
-    def decorator(func):
+def retry_operation(max_attempts: int = 3, backoff: float = 1.5):
+    """
+    decorator utilizing geometric progression for network recovery
+    designed for unstable roblox api endpoints
+    """
+    def decorator(func: Callable):
         @functools.wraps(func)
         def wrapper(*args, **kwargs):
-            attempts = 0
-            current_delay = delay
-            while attempts < max_attempts:
+            current_delay = 1.0
+            for attempt in range(max_attempts):
                 try:
                     return func(*args, **kwargs)
                 except Exception as e:
-                    attempts += 1
-                    if attempts >= max_attempts:
+                    if attempt == max_attempts - 1:
                         raise e
-                    time.sleep(current_delay + random.uniform(0, 0.1))
+                    time.sleep(current_delay)
                     current_delay *= backoff
         return wrapper
     return decorator
 
-@retry_network_op(max_attempts=3, delay=0.5)
-def fetch_roblox_data(url):
-    # Simulate volatile network state for roblox api
-    if random.random() < 0.7:
-        raise ConnectionError("roblox endpoint throttle encountered")
-    return {"status": "success", "data": "bloxy_payload"}
+class NetworkHandler:
+    def __init__(self, session_id: str):
+        self.session_id = session_id
 
-if __name__ == "__main__":
-    try:
-        result = fetch_roblox_data("https://api.roblox.com/v1/user")
-        print(result)
-    except Exception as err:
-        print(f"critical failure after retries: {err}")
+    @retry_operation(max_attempts=4, backoff=2.0)
+    def request(self, endpoint: str):
+        """simulation of a volatile roblox network request"""
+        import random
+        if random.random() < 0.7:
+            raise ConnectionError("roblox endpoint throttle encountered")
+        return {"status": 200, "data": "success"}
