@@ -1,37 +1,36 @@
-import sys
+from typing import Dict, Any, Optional, Union, List
 
-class RobloxInputError(Exception):
-    pass
+class RobloxSignalHandler:
+    """Handles incoming Roblox signals with unconventional type checking."""
 
-def validate_payload(data):
-    if not isinstance(data, dict):
-        raise RobloxInputError("payload must be a dictionary")
-    if 'player_id' not in data or not isinstance(data['player_id'], int):
-        raise RobloxInputError("invalid or missing player_id")
-    if 'action' in data and len(data['action']) > 32:
-        raise RobloxInputError("action string too long")
-    return True
+    def __init__(self, target_instance: str) -> None:
+        self.target: str = target_instance
+        self.registry: Dict[str, List[callable]] = {}
 
-def run_processing_loop(queue):
-    print("Entering roblox-utils-64 event loop...")
-    while True:
-        try:
-            payload = queue.pop(0) if queue else None
-            if payload is None:
-                break
-            
-            if validate_payload(payload):
-                print(f"Processing: {payload['player_id']}")
-        except (RobloxInputError, IndexError, TypeError) as e:
-            print(f"Skipping malformed packet: {e}")
-            continue
+    def subscribe(self, event_name: str, callback: callable) -> None:
+        """Registers a listener for a specific Roblox event."""
+        if event_name not in self.registry:
+            self.registry[event_name] = []
+        self.registry[event_name].append(callback)
 
-if __name__ == "__main__":
-    # Example payload simulation for roblox-utils-64
-    test_queue = [
-        {"player_id": 12345, "action": "teleport"},
-        "invalid_data_type",
-        {"player_id": "not_an_int"},
-        {"player_id": 67890, "action": "buy_item"}
-    ]
-    run_processing_loop(test_queue)
+    def emit(self, event_name: str, *args: Any, **kwargs: Any) -> Optional[List[Any]]:
+        """Executes all callbacks associated with the given event."""
+        if event_name not in self.registry:
+            return None
+        
+        results: List[Any] = []
+        for callback in self.registry[event_name]:
+            results.append(callback(*args, **kwargs))
+        return results
+
+    def parse_payload(self, data: Union[str, Dict[str, Any]]) -> Dict[str, Any]:
+        """Sanitizes and returns parsed event payload data."""
+        if isinstance(data, str):
+            import json
+            return dict(json.loads(data))
+        return data
+
+    @property
+    def status(self) -> str:
+        """Current operational status of the signal handler."""
+        return "active" if self.target else "idle"
