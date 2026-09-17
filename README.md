@@ -1,47 +1,49 @@
 # python-utils-64
 
-A high-performance Python toolkit designed for Roblox developers to streamline data manipulation and API interactions. This library simplifies complex workflows, allowing for faster integration between local Python environments and the Roblox ecosystem.
+`python-utils-64` is a lightweight Python toolkit designed to streamline interactions with the Roblox ecosystem. It simplifies complex API tasks, allowing developers to manage assets, player data, and game configurations with minimal overhead.
 
 ## Features
 
-*   **RBXL Parser:** Efficiently read and process `.rbxl` file structures without needing the Roblox Studio client.
-*   **Asset Management:** Automated scripts for bulk-uploading textures and decals to the Roblox Creator Dashboard via the Open Cloud API.
-*   **Datastore Sync:** Seamlessly bridge external databases with Roblox Datastores, supporting key-value serialization for game persistence.
-*   **Luau Syntax Checker:** Built-in linting integration to validate script segments before pushing to Rojo-managed projects.
+*   **Roblox Cookie Authenticator:** Securely manage sessions using session cookies with automated CSRF token handling.
+*   **Asset Uploader:** Rapidly batch upload images, decals, or audio files to the Roblox creator dashboard via the internal API.
+*   **Game State Monitor:** Real-time polling utilities to track server status, player counts, and API health endpoints.
+*   **DataStore Interop:** Efficient helper methods for interacting with Roblox DataStore V2, including custom serialization and batch querying.
 
 ## Installation
 
-Install the package via pip:
+Install the package directly via pip:
 
 ```bash
 pip install python-utils-64
 ```
 
-To enable the Open Cloud API integration, ensure you have your API Key exported in your environment:
+To work with the latest features from the development branch:
 
 ```bash
-export ROBLOX_API_KEY='your-api-key-here'
+git clone https://github.com/Developer/python-utils-64.git
+cd python-utils-64
+pip install -r requirements.txt
 ```
 
 ## Basic Usage
 
-Quickly fetch your game's current player count or metadata using the library:
+The following example demonstrates how to initialize a client and fetch details for a specific Roblox place:
 
 ```python
-from roblox_utils import RobloxClient
+from utils64 import RobloxClient
 
-client = RobloxClient(api_key="your_key")
+# Initialize with your session cookie
+client = RobloxClient(cookie=".ROBLOSECURITY_TOKEN_HERE")
 
-# Retrieve place information
-place_info = client.get_place_metadata(place_id=123456789)
-print(f"Current server count: {place_info.active_servers}")
+# Fetch game metadata
+place_info = client.games.get_place_details(place_id=123456789)
 
-# Push a bulk update to the datastore
-client.datastore.update_entry("PlayerData", "user_123", {"level": 50})
+print(f"Game Name: {place_info.name}")
+print(f"Active Players: {place_info.player_count}")
 ```
 
 ## License
 
-![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
