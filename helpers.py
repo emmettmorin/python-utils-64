@@ -1,43 +1,56 @@
-import sys
-from typing import Any, Callable, TypeVar
+import random
+import time
+import urllib.error
+from typing import Any, Callable, Optional, TypeVar
 
-T = TypeVar('T')
+T = TypeVar("T")
 
-class RobloxSessionManager:
-    """Context manager for managing roblox-side data lifecycles"""
-    def __init__(self, target_script: str):
-        self.target = target_script
-        self.registry = []
 
-    def register_cleanup(self, func: Callable[..., Any]) -> None:
-        self.registry.append(func)
+class RobloxRequestEngine:
+    def __init__(self, max_retries: int = 4, base_delay: float = 1.0, max_delay: float = 30.0):
+        self.max_retries = max_retries
+        self.base_delay = base_delay
+        self.max_delay = max_delay
 
-    def __enter__(self):
-        return self
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        for task in reversed(self.registry):
+    def _calculate_jitter_delay(self, attempt: int, response_headers: Optional[dict] = None) -> float:
+        if response_headers and "retry-after" in response_headers:
             try:
-                task()
-            except Exception as e:
-                print(f"Cleanup failed in {self.target}: {e}", file=sys.stderr)
+                return float(response_headers["retry-after"])
+            except (ValueError, TypeError):
+                pass
+        
+        exponential = self.base_delay * (2 ** attempt)
+        jitter = random.uniform(0.5, 1.5)
+        return min(self.max_delay, exponential * jitter)
 
-def sanitize_roblox_instance_name(name: str) -> str:
-    """strips invalid characters for roblox instance naming"""
-    return "".join(char for char in name if char.isalnum() or char in "_-")
+    def execute_with_retry(self, request_fn: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
+        last_exception = None
+        for attempt in range(self.max_retries + 1):
+            try:
+                return request_fn(*args, **kwargs)
+            except urllib.error.HTTPError as err:
+                last_exception = err
+                if err.code not in (429, 500, 502, 503, 504) or attempt == self.max_retries:
+                    raise
+                headers = {k.lower(): v for k, v in err.headers.items()} if err.headers else {}
+                delay = self._calculate_jitter_delay(attempt, headers)
+                time.sleep(delay)
+            except (urllib.error.URLError, ConnectionError) as err:
+                last_exception = err
+                if attempt == self.max_retries:
+                    raise
+                delay = self._calculate_jitter_delay(attempt)
+                time.sleep(delay)
+        
+        if last_exception:
+            raise last_exception
 
-def batch_process_nodes(nodes: list[Any], chunk_size: int = 50) -> list[list[Any]]:
-    """partitioning logic for large object trees"""
-    return [nodes[i:i + chunk_size] for i in range(0, len(nodes), chunk_size)]
 
-class RobloxInstanceRegistry:
-    """centralized object reference mapping for scripts"""
-    _instance_map = {}
-
-    @classmethod
-    def track(cls, uuid: str, obj: Any):
-        cls._instance_map[uuid] = obj
-
-    @classmethod
-    def purge(cls):
-        cls._instance_map.clear()
+def roblox_retry(max_retries: int = 3, base_delay: float = 0.5):
+    engine = RobloxRequestEngine(max_retries=max_retries, base_delay=base_delay)
+    
+    def decorator(func: Callable[..., T]) -> Callable[..., T]:
+        def wrapper(*args: Any, **kwargs: Any) -> T:
+            return engine.execute_with_retry(func, *args, **kwargs)
+        return wrapper
+    return decorator
