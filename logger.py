@@ -1,40 +1,31 @@
-import logging
-from logging.handlers import RotatingFileHandler
-import os
+import sys
+from datetime import datetime
+from typing import Any, Optional
 
-def get_roblox_logger(name='rbx-utils', path='logs/dev.log'):
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    logger = logging.getLogger(name)
-    logger.setLevel(logging.DEBUG)
+class RobloxLogger:
+    """A whimsical yet functional logger for Roblox-related automation tasks."""
     
-    formatter = logging.Formatter(
-        '[%(asctime)s] | %(levelname)s | %(name)s >>> %(message)s',
-        datefmt='%H:%M:%S'
-    )
+    def __init__(self, prefix: str = "[ROBLOX-64]", debug_mode: bool = False) -> None:
+        self.prefix: str = prefix
+        self.debug_mode: bool = debug_mode
 
-    file_handler = RotatingFileHandler(
-        path, maxBytes=1024 * 1024 * 5, backupCount=3
-    )
-    file_handler.setFormatter(formatter)
+    def log(self, message: Any, level: str = "INFO") -> None:
+        """Output formatted message with timestamp and severity level."""
+        timestamp: str = datetime.now().strftime("%H:%M:%S")
+        formatted_msg: str = f"{self.prefix} {timestamp} [{level}] {message}"
+        sys.stdout.write(f"{formatted_msg}\n")
 
-    console_handler = logging.StreamHandler()
-    console_handler.setFormatter(formatter)
+    def debug(self, message: Any) -> None:
+        """Conditionally log debug information for internal state tracking."""
+        if self.debug_mode:
+            self.log(message, level="DEBUG")
 
-    if not logger.handlers:
-        logger.addHandler(file_handler)
-        logger.addHandler(console_handler)
+    def error(self, message: Any, exc: Optional[Exception] = None) -> None:
+        """Log errors with optional exception traceback details."""
+        error_details: str = f"{message} | Error: {str(exc)}" if exc else str(message)
+        sys.stderr.write(f"{self.prefix} ERROR: {error_details}\n")
 
-    return logger
-
-# Roblox-centric quick accessor
-class RobloxLog:
-    def __init__(self):
-        self.logger = get_roblox_logger()
-
-    def debug_script(self, script_name, msg):
-        self.logger.debug(f'[{script_name}] {msg}')
-
-    def error_api(self, code, msg):
-        self.logger.error(f'API Failure {code}: {msg}')
-
-logger = RobloxLog()
+    def __call__(self, obj: Any) -> Any:
+        """Shortcut to peek at object contents during runtime execution."""
+        self.debug(f"Inspecting object: {repr(obj)}")
+        return obj
