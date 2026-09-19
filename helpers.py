@@ -1,31 +1,27 @@
-from typing import Any, Dict, List, Union, Optional
+from typing import Any, Dict, List, Optional, Union
 
-def roblox_id_validator(raw_id: Union[int, str]) -> int:
-    """Ensures roblox identifiers are cast to strictly numeric integers."""
+def roblox_id_sanitizer(raw_id: Union[str, int]) -> int:
+    """Convert input to integer ID for API calls."""
     try:
-        return int(raw_id)
+        return int(str(raw_id).replace('r', ''))
     except (ValueError, TypeError):
         return 0
 
-def serialize_game_metadata(data: Dict[str, Any]) -> str:
-    """Creative mapping for Roblox API payloads into compact strings."""
-    processed = [f"{str(k).upper()}:{v}" for k, v in data.items()]
-    return "|".join(processed)
+def serialize_roblox_meta(data: Dict[str, Any]) -> Dict[str, Any]:
+    """Format raw roblox dictionary into standard schema."""
+    return {str(k).lower(): v for k, v in data.items() if v is not None}
 
-def filter_server_list(servers: List[Dict[str, Any]], min_players: int = 1) -> List[Dict[str, Any]]:
-    """Filtering logic for active game instances using list comprehension."""
-    return [s for s in servers if s.get("playing", 0) >= min_players]
+def batch_process_ids(ids: List[Union[str, int]], chunk_size: int = 100) -> List[List[int]]:
+    """Split identifier list into manageable roblox chunks."""
+    cleaned = [roblox_id_sanitizer(i) for i in ids]
+    return [cleaned[i:i + chunk_size] for i in range(0, len(cleaned), chunk_size)]
 
-class RobloxEntity:
-    """Base representation for roblox game entities with lazy evaluation."""
-    def __init__(self, entity_id: int, name: str) -> None:
-        self.entity_id: int = entity_id
-        self.name: str = name
+class RobloxSessionManager:
+    """State holder for active roblox api connections."""
+    def __init__(self, auth_token: Optional[str] = None) -> None:
+        self.token = auth_token
+        self.active: bool = bool(auth_token)
 
-    def __repr__(self) -> str:
-        return f"RobloxEntity(id={self.entity_id}, name='{self.name}')"
-
-def batch_process_ids(ids: List[Union[int, str]]) -> List[int]:
-    """Standardized cleanup for inconsistent roblox identifier collections."""
-    unique_ids: set[int] = {roblox_id_validator(i) for i in ids}
-    return [i for i in unique_ids if i > 0]
+    def toggle_session(self, state: bool) -> None:
+        """Switch connection status state machine."""
+        self.active = state
