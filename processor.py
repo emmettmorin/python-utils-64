@@ -1,52 +1,33 @@
-import re
-import urllib.request
-import json
-from typing import Dict, Any, Generator
+import time
+import functools
+import random
 
-class RobloxAssetProcessor:
-    """Creative processor for Roblox asset resolution and security masking."""
-    
-    # Regex for various Roblox asset formats
-    ASSET_PATTERN = re.compile(r"(?:rbxassetid://|/asset/\?id=|roblox\.com/catalog/)(\d+)")
+class NetworkRetry:
+    def __init__(self, retries=3, delay=1.0, backoff=2.0):
+        self.retries = retries
+        self.delay = delay
+        self.backoff = backoff
 
-    def __init__(self, cookie: str = None):
-        self._cookie = cookie
+    def __call__(self, func):
+        @functools.wraps(func)
+        def wrapper(*args, **kwargs):
+            attempt = 0
+            current_delay = self.delay
+            while attempt < self.retries:
+                try:
+                    return func(*args, **kwargs)
+                except Exception as e:
+                    attempt += 1
+                    if attempt == self.retries:
+                        raise e
+                    sleep_time = current_delay + random.uniform(0, 0.1)
+                    time.sleep(sleep_time)
+                    current_delay *= self.backoff
+        return wrapper
 
-    @property
-    def masked_cookie(self) -> str:
-        """Masks the sensitive .ROBLOSECURITY token for safe logging."""
-        if not self._cookie:
-            return ""
-        parts = self._cookie.split("_|WARNINGExternal-")
-        target = parts[-1] if parts else self._cookie
-        return f"WarningMasked...{target[-20:] if len(target) > 20 else '...'}"
-
-    def extract_asset_ids(self, text: str) -> Generator[int, None, None]:
-        """Extracts all Roblox asset IDs found within a string or script source."""
-        for match in self.ASSET_PATTERN.finditer(text):
-            yield int(match.group(1))
-
-    def fetch_universe_info(self, place_id: int) -> Dict[str, Any]:
-        """Retrieves universe information for a given Place ID using Roblox API."""
-        url = f"https://apis.roblox.com/universes/v1/places/{place_id}/universe"
-        headers = {"User-Agent": "RobloxUtils64/1.0"}
-        if self._cookie:
-            headers["Cookie"] = f".ROBLOSECURITY={self._cookie}"
-            
-        req = urllib.request.Request(url, headers=headers)
-        try:
-            with urllib.request.urlopen(req, timeout=5) as response:
-                return json.loads(response.read().decode('utf-8'))
-        except Exception as e:
-            return {"error": str(e), "placeId": place_id, "universeId": None}
-
-    def compile_manifest(self, source_code: str) -> Dict[int, Dict[str, Any]]:
-        """Processes source code, extracts asset IDs, and maps them to dynamic configurations."""
-        return {
-            asset_id: {
-                "resolved_url": f"https://assetdelivery.roblox.com/v1/asset/?id={asset_id}",
-                "cdn_link": f"rbxassetid://{asset_id}",
-                "processed_status": "resolved"
-            }
-            for asset_id in self.extract_asset_ids(source_code)
-        }
+@NetworkRetry(retries=3, delay=0.5)
+def roblox_api_request(endpoint):
+    # Simulated niche network operation
+    if random.random() < 0.7:
+        raise ConnectionError("Roblox API gateway hiccup")
+    return {"status": "success", "data": "payload"}
