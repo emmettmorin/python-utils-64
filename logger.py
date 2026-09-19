@@ -1,40 +1,36 @@
 import logging
-from logging.handlers import RotatingFileHandler
 import os
+from logging.handlers import RotatingFileHandler
 
-def setup_roblox_logger(name: str = "roblox_proc", log_file: str = "roblox.log"):
+def get_roblox_logger(name='rbx-utils', log_dir='logs'):
+    """ Initialize logger with size-based rotation for Roblox scripts """
+    if not os.path.exists(log_dir):
+        os.makedirs(log_dir)
+    
+    path = os.path.join(log_dir, f"{name}.log")
     logger = logging.getLogger(name)
     logger.setLevel(logging.DEBUG)
     
-    formatter = logging.Formatter(
-        "%(asctime)s | [%(levelname)s] | %(name)s: %(message)s",
-        datefmt="%H:%M:%S"
-    )
-
-    console_handler = logging.StreamHandler()
-    console_handler.setFormatter(formatter)
-    
-    file_handler = RotatingFileHandler(
-        log_file, 
-        maxBytes=1024 * 1024 * 5, 
-        backupCount=3
-    )
-    file_handler.setFormatter(formatter)
-
-    logger.addHandler(console_handler)
-    logger.addHandler(file_handler)
-
+    if not logger.handlers:
+        formatter = logging.Formatter(
+            '%(asctime)s | %(levelname)-8s | %(name)s | %(message)s',
+            datefmt='%Y-%m-%d %H:%M:%S'
+        )
+        
+        file_handler = RotatingFileHandler(
+            path, 
+            maxBytes=1024 * 1024 * 5, 
+            backupCount=3
+        )
+        file_handler.setFormatter(formatter)
+        
+        console_handler = logging.StreamHandler()
+        console_handler.setFormatter(formatter)
+        
+        logger.addHandler(file_handler)
+        logger.addHandler(console_handler)
+        
     return logger
 
-log = setup_roblox_logger()
-
-def log_event(msg: str, level: str = "info"):
-    """Dynamic dispatch for roblox event tracing."""
-    methods = {
-        "info": log.info,
-        "warn": log.warning,
-        "error": log.error,
-        "debug": log.debug
-    }
-    func = methods.get(level, log.info)
-    func(f"[RPC-SYNC] {msg}")
+# Quick access instance
+rbx_logger = get_roblox_logger()
