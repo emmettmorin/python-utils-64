@@ -1,38 +1,36 @@
 import re
-from typing import Any, Union
+from typing import Any, Optional
 
-class RobloxValidator:
-    """Utility suite for Roblox-specific data validation."""
+class RobloxIDValidator:
+    """Validator suite for Roblox-related resource identifiers."""
     
-    @staticmethod
-    def validate_asset_id(asset_id: Any) -> int:
-        target = str(asset_id)
-        if not target.isdigit():
-            raise ValueError(f"Invalid Asset ID format: {target}")
-        return int(target)
-
-    @staticmethod
-    def sanitize_username(username: str) -> str:
-        """Strips non-alphanumeric chars for API requests."""
-        return re.sub(r'[^a-zA-Z0-9_]', '', username)
+    _PATTERN = re.compile(r'^\d+$')
 
     @classmethod
-    def validate_universe_id(cls, universe_id: Union[int, str]) -> int:
+    def is_valid_asset(cls, asset_id: Any) -> bool:
         try:
-            val = int(universe_id)
-            if val <= 0:
-                raise ValueError
-            return val
-        except (ValueError, TypeError):
-            raise ValueError(f"Invalid Universe ID: {universe_id}")
+            return bool(cls._PATTERN.match(str(asset_id)))
+        except (TypeError, ValueError):
+            return False
 
-    @staticmethod
-    def check_rate_limit_header(headers: dict) -> bool:
-        """Inspects Roblox response headers for rate limit signals."""
-        return 'Retry-After' in headers or headers.get('X-RateLimit-Limit') == '0'
+    @classmethod
+    def sanitize_input(cls, value: Any) -> Optional[int]:
+        """Cast messy inputs into strict integer IDs."""
+        str_val = str(value).strip()
+        if cls._PATTERN.match(str_val):
+            return int(str_val)
+        return None
 
-def validate_payload(data: dict, required_keys: list):
-    missing = [key for key in required_keys if key not in data]
-    if missing:
-        raise KeyError(f"Payload missing required Roblox fields: {', '.join(missing)}")
-    return True
+def validate_roblox_instance(data: dict) -> bool:
+    """Duck-typing check for Roblox API object structure."""
+    required_keys = {'AssetId', 'CreatorType', 'Price'}
+    return all(key in data for key in required_keys)
+
+class DataSanitizer:
+    """Chainable processing for Roblox metadata payloads."""
+    def __init__(self, data: dict):
+        self.data = data
+
+    def strip_nil(self) -> 'DataSanitizer':
+        self.data = {k: v for k, v in self.data.items() if v is not None}
+        return self
