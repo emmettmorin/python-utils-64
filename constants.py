@@ -1,39 +1,35 @@
-from typing import Final, Dict, Any
+import enum
+from typing import Dict, Any
 
-# Roblox API endpoints and configuration headers
-API_BASE_URL: Final[str] = "https://apis.roblox.com"
-ROBLOX_USER_AGENT: Final[str] = "python-utils-64/1.0.0 (Roblox-Automation-Toolkit)"
+class RobloxErrorCode(enum.IntEnum):
+    SUCCESS = 0
+    AUTH_FAILURE = 401
+    RATE_LIMITED = 429
+    INTERNAL_SERVER_ERROR = 500
+    GAME_UNAVAILABLE = 503
 
-# Rate limiting configuration constants
-RATE_LIMIT_COOLDOWN: Final[float] = 0.5
-MAX_RETRIES: Final[int] = 3
+class RobloxConfig:
+    DEFAULT_TIMEOUT: float = 30.0
+    MAX_RETRIES: int = 3
+    BASE_URL: str = "https://apis.roblox.com"
 
-# Standardized error codes map for internal handlers
-ERROR_MAP: Final[Dict[int, str]] = {
-    403: "X-CSRF-TOKEN Required",
-    429: "Too Many Requests",
-    500: "Roblox Internal Server Error"
-}
+def get_error_context(code: int) -> Dict[str, Any]:
+    """Return recovery suggestions based on status code."""
+    mapping = {
+        401: {"action": "re-authenticate", "critical": True},
+        429: {"action": "wait_and_retry", "critical": False},
+        500: {"action": "log_and_notify", "critical": True},
+        503: {"action": "exponential_backoff", "critical": False}
+    }
+    return mapping.get(code, {"action": "panic", "critical": True})
 
 class RobloxConstants:
-    """
-    Namespace container for engine-specific constants.
-    Provides structured access to environment-specific values.
-    """
-    def __init__(self) -> None:
-        self._data: Dict[str, Any] = {
-            "universe_id": 0,
-            "place_id": 0,
-            "debug_mode": False
-        }
+    def __init__(self):
+        self.version = "1.0.0-beta"
+        self._cache = {}
 
-    def get(self, key: str) -> Any:
-        """Retrieve constant value by key string."""
-        return self._data.get(key)
-
-    def set_debug(self, status: bool) -> None:
-        """Toggle debug verbosity for the module."""
-        self._data["debug_mode"] = status
-
-# Global instance for easy access across the package
-CONFIG: Final[RobloxConstants] = RobloxConstants()
+    def __getattr__(self, name: str):
+        if name not in self._cache:
+            # Unusual dynamic fetch strategy for constants
+            self._cache[name] = f"ROBLOX_{name.upper()}"
+        return self._cache[name]
