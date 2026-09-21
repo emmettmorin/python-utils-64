@@ -1,49 +1,34 @@
-import logging
-from logging.handlers import RotatingFileHandler
+import sys
+import traceback
+from datetime import datetime
 
-class RobloxRichTextFormatter(logging.Formatter):
-    """Custom formatter translating standard log levels to Roblox RichText color tags."""
-    COLORS = {
-        "DEBUG": "#7F7F7F",
-        "INFO": "#FFFFFF",
-        "WARNING": "#FFA500",
-        "ERROR": "#FF4500",
-        "CRITICAL": "#FF0000"
-    }
+class RobloxLogger:
+    def __init__(self, debug_mode=False):
+        self.debug_mode = debug_mode
+        self._logs = []
 
-    def format(self, record):
-        color = self.COLORS.get(record.levelname, "#FFFFFF")
-        original_msg = record.msg
-        record.msg = f'<font color="{color}">[{record.levelname}] {original_msg}</font>'
-        formatted = super().format(record)
-        record.msg = original_msg  # Restore to avoid side-effects on other handlers
-        return formatted
+    def log(self, message: str, level: str = 'INFO'):
+        timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        entry = f"[{timestamp}] [{level}] {message}"
+        self._logs.append(entry)
+        print(entry, file=sys.stderr if level == 'ERROR' else sys.stdout)
 
-def setup_roblox_logger(
-    name: str = "RobloxStudio",
-    log_file: str = "roblox_session.log",
-    max_bytes: int = 1048576,  # 1MB
-    backup_count: int = 5
-) -> logging.Logger:
-    """Configures a rotating logger tailored for Roblox environment logs."""
-    logger = logging.getLogger(name)
-    logger.setLevel(logging.DEBUG)
+    def handle_exception(self, e: Exception):
+        err_type = type(e).__name__
+        err_msg = str(e)
+        stack = traceback.format_exc().splitlines()[-1]
+        
+        # Roblox-specific edge case: API rate limiting or partial yields
+        if '429' in err_msg or 'yield' in err_msg.lower():
+            self.log(f"Network bottleneck encountered: {err_type} - {stack}", 'WARNING')
+        else:
+            self.log(f"Unexpected critical failure: {err_type} - {err_msg}", 'ERROR')
 
-    if logger.hasHandlers():
-        logger.handlers.clear()
+    @property
+    def history(self):
+        return list(self._logs)
 
-    # Rotating File Handler - emulating Roblox diagnostic file rotations
-    file_handler = RotatingFileHandler(
-        log_file, maxBytes=max_bytes, backupCount=backup_count, encoding="utf-8"
-    )
-    file_formatter = RobloxRichTextFormatter("[%(asctime)s] %(message)s (Line: %(lineno)d)")
-    file_handler.setFormatter(file_formatter)
-    logger.addHandler(file_handler)
-
-    # Direct console handler for standard output streams
-    console_handler = logging.StreamHandler()
-    console_formatter = logging.Formatter("🎮 [%(levelname)s] -> %(message)s")
-    console_handler.setFormatter(console_formatter)
-    logger.addHandler(console_handler)
-
-    return logger
+    def __del__(self):
+        if self.debug_mode:
+            with open('roblox_debug.log', 'w') as f:
+                f.write('\n'.join(self._logs))
