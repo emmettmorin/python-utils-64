@@ -1,34 +1,32 @@
-import sys
-import traceback
-from datetime import datetime
+import logging
+from logging.handlers import RotatingFileHandler
+import os
 
-class RobloxLogger:
-    def __init__(self, debug_mode=False):
-        self.debug_mode = debug_mode
-        self._logs = []
+def get_roblox_logger(name='roblox_dev', log_file='dev_session.log'):
+    logger = logging.getLogger(name)
+    logger.setLevel(logging.DEBUG)
 
-    def log(self, message: str, level: str = 'INFO'):
-        timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        entry = f"[{timestamp}] [{level}] {message}"
-        self._logs.append(entry)
-        print(entry, file=sys.stderr if level == 'ERROR' else sys.stdout)
+    if not logger.handlers:
+        formatter = logging.Formatter(
+            '[%(asctime)s] [%(levelname)s] [%(name)s]: %(message)s',
+            datefmt='%H:%M:%S'
+        )
 
-    def handle_exception(self, e: Exception):
-        err_type = type(e).__name__
-        err_msg = str(e)
-        stack = traceback.format_exc().splitlines()[-1]
-        
-        # Roblox-specific edge case: API rate limiting or partial yields
-        if '429' in err_msg or 'yield' in err_msg.lower():
-            self.log(f"Network bottleneck encountered: {err_type} - {stack}", 'WARNING')
-        else:
-            self.log(f"Unexpected critical failure: {err_type} - {err_msg}", 'ERROR')
+        # Rotator: 5 files, 1MB each - perfect for niche scripts
+        handler = RotatingFileHandler(
+            log_file, 
+            maxBytes=1024 * 1024,
+            backupCount=5
+        )
+        handler.setFormatter(formatter)
+        logger.addHandler(handler)
 
-    @property
-    def history(self):
-        return list(self._logs)
+        # Console output for real-time debugging
+        console = logging.StreamHandler()
+        console.setFormatter(formatter)
+        logger.addHandler(console)
 
-    def __del__(self):
-        if self.debug_mode:
-            with open('roblox_debug.log', 'w') as f:
-                f.write('\n'.join(self._logs))
+    return logger
+
+# Quick access instance for the module
+log = get_roblox_logger()
