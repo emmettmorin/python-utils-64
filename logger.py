@@ -1,32 +1,27 @@
-import logging
-from logging.handlers import RotatingFileHandler
-import os
+import datetime
+from typing import Any, NoReturn
 
-def get_roblox_logger(name='roblox_dev', log_file='dev_session.log'):
-    logger = logging.getLogger(name)
-    logger.setLevel(logging.DEBUG)
+class RobloxLogger:
+    """Advanced logging utility for Roblox-interfacing scripts."""
 
-    if not logger.handlers:
-        formatter = logging.Formatter(
-            '[%(asctime)s] [%(levelname)s] [%(name)s]: %(message)s',
-            datefmt='%H:%M:%S'
-        )
+    def __init__(self, debug_mode: bool = False) -> None:
+        self.debug_mode: bool = debug_mode
 
-        # Rotator: 5 files, 1MB each - perfect for niche scripts
-        handler = RotatingFileHandler(
-            log_file, 
-            maxBytes=1024 * 1024,
-            backupCount=5
-        )
-        handler.setFormatter(formatter)
-        logger.addHandler(handler)
+    def log(self, message: str, level: str = "INFO") -> None:
+        """Formats and prints output with execution timestamp."""
+        timestamp: str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        print(f"[{timestamp}] [{level.upper()}] -> {message}")
 
-        # Console output for real-time debugging
-        console = logging.StreamHandler()
-        console.setFormatter(formatter)
-        logger.addHandler(console)
+    def critical(self, message: str) -> NoReturn:
+        """Raises formatted exception for terminal failures."""
+        self.log(message, level="CRITICAL")
+        raise RuntimeError(f"Roblox Script Termination: {message}")
 
-    return logger
+    def debug(self, obj: Any) -> None:
+        """Internal diagnostic dump for object inspection."""
+        if self.debug_mode:
+            self.log(f"DEBUG DUMP: {repr(obj)}", level="DEBUG")
 
-# Quick access instance for the module
-log = get_roblox_logger()
+def get_logger(debug: bool = False) -> RobloxLogger:
+    """Factory function for unified logger instances."""
+    return RobloxLogger(debug_mode=debug)
