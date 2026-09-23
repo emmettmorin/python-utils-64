@@ -1,43 +1,38 @@
 import json
-import os
+from pathlib import Path
 from typing import Any, Dict
 
 class ConfigLoader:
-    def __init__(self, defaults: Dict[str, Any], filepath: str = 'config.json'):
-        self.filepath = filepath
-        self.data = defaults
-        self._load_and_merge()
+    """Dynamic attribute access for Roblox bot configurations."""
+    def __init__(self, file_path: str, defaults: Dict[str, Any]):
+        self._path = Path(file_path)
+        self._data = defaults
+        self._load()
 
-    def _load_and_merge(self) -> None:
-        if not os.path.exists(self.filepath):
-            self._save_defaults()
-            return
-        
-        try:
-            with open(self.filepath, 'r') as f:
-                loaded = json.load(f)
-                self.data.update(loaded)
-        except (json.JSONDecodeError, IOError):
-            pass
-
-    def _save_defaults(self) -> None:
-        try:
-            with open(self.filepath, 'w') as f:
-                json.dump(self.data, f, indent=4)
-        except IOError:
-            pass
-
-    def __getitem__(self, key: str) -> Any:
-        return self.data.get(key)
+    def _load(self) -> None:
+        if self._path.exists():
+            with open(self._path, 'r') as f:
+                try:
+                    self._data.update(json.load(f))
+                except json.JSONDecodeError:
+                    pass
 
     def __getattr__(self, name: str) -> Any:
-        return self.data.get(name)
+        return self._data.get(name)
 
-def get_roblox_config():
-    defaults = {
-        "place_id": 0,
-        "universe_id": 0,
-        "api_key": "secret",
-        "debug": False
-    }
-    return ConfigLoader(defaults)
+    def __setattr__(self, name: str, value: Any) -> None:
+        if name.startswith('_'):
+            super().__setattr__(name, value)
+        else:
+            self._data[name] = value
+            self._save()
+
+    def _save(self) -> None:
+        with open(self._path, 'w') as f:
+            json.dump(self._data, f, indent=4)
+
+    def __repr__(self) -> str:
+        return f"<ConfigLoader: {list(self._data.keys())}>"
+
+def get_config(name: str = "config.json", **defaults) -> ConfigLoader:
+    return ConfigLoader(name, defaults)
