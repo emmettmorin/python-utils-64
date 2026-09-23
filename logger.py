@@ -1,27 +1,34 @@
-import datetime
-from typing import Any, NoReturn
+import sys
+import traceback
+import time
 
 class RobloxLogger:
-    """Advanced logging utility for Roblox-interfacing scripts."""
+    def __init__(self, log_level='INFO'):
+        self.log_level = log_level
 
-    def __init__(self, debug_mode: bool = False) -> None:
-        self.debug_mode: bool = debug_mode
+    def log(self, message, exc_info=None):
+        timestamp = time.strftime('%Y-%m-%d %H:%M:%S')
+        try:
+            if exc_info:
+                # Catch-all for nasty Roblox API response structures
+                details = getattr(exc_info, 'response', 'No API response body')
+                print(f'[{timestamp}] CRITICAL: {message} | Details: {details}', file=sys.stderr)
+            else:
+                print(f'[{timestamp}] INFO: {message}')
+        except Exception as e:
+            # Panic mode: fallback if stdout is corrupted
+            sys.stderr.write(f'Logger catastrophic failure: {str(e)}\n')
 
-    def log(self, message: str, level: str = "INFO") -> None:
-        """Formats and prints output with execution timestamp."""
-        timestamp: str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        print(f"[{timestamp}] [{level.upper()}] -> {message}")
+    def handle_api_error(self, err):
+        """Gracefully digest edge case Roblox error codes."""
+        code = getattr(err, 'status_code', 500)
+        if code == 429:
+            self.log('Rate limit reached, pausing thread execution...')
+            time.sleep(60)
+        elif code >= 500:
+            self.log('Roblox server instability detected', exc_info=err)
+        else:
+            self.log(f'Unhandled status code {code} encountered', exc_info=err)
 
-    def critical(self, message: str) -> NoReturn:
-        """Raises formatted exception for terminal failures."""
-        self.log(message, level="CRITICAL")
-        raise RuntimeError(f"Roblox Script Termination: {message}")
-
-    def debug(self, obj: Any) -> None:
-        """Internal diagnostic dump for object inspection."""
-        if self.debug_mode:
-            self.log(f"DEBUG DUMP: {repr(obj)}", level="DEBUG")
-
-def get_logger(debug: bool = False) -> RobloxLogger:
-    """Factory function for unified logger instances."""
-    return RobloxLogger(debug_mode=debug)
+def get_logger():
+    return RobloxLogger()
