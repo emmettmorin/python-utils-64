@@ -1,35 +1,38 @@
+import time
 import functools
-import logging
 
 class RobloxSessionError(Exception):
     pass
 
-def robust_request(func):
-    @functools.wraps(func)
-    def wrapper(*args, **kwargs):
-        try:
-            return func(*args, **kwargs)
-        except ConnectionError as e:
-            logging.error(f"Network instability in {func.__name__}: {e}")
-            raise RobloxSessionError("Connection dropped while talking to Roblox API")
-        except TypeError as e:
-            logging.critical(f"Data corruption on {func.__name__}: {e}")
-            return None
-        except Exception as e:
-            logging.warning(f"Unexpected anomaly during {func.__name__}: {type(e).__name__}")
-            return None
-    return wrapper
+def robust_execution(max_retries=3, delay=1):
+    def decorator(func):
+        @functools.wraps(func)
+        def wrapper(*args, **kwargs):
+            last_ex = None
+            for attempt in range(max_retries):
+                try:
+                    return func(*args, **kwargs)
+                except (ConnectionError, TimeoutError) as e:
+                    last_ex = e
+                    time.sleep(delay * (2 ** attempt))
+            raise RobloxSessionError(f'failed after {max_retries} attempts: {last_ex}')
+        return wrapper
+    return decorator
 
-class RobloxPipeline:
-    def __init__(self, key: str):
-        self._key = key
+class RobloxProcessor:
+    def __init__(self, endpoint):
+        self.endpoint = endpoint
 
-    @robust_request
-    def fetch_user_data(self, user_id: int):
-        if not isinstance(user_id, int) or user_id < 0:
-            raise TypeError("Invalid snowflake identifier")
-        return {"id": user_id, "status": "online"}
+    @robust_execution(max_retries=2)
+    def fetch_data(self, asset_id):
+        if not isinstance(asset_id, int):
+            raise ValueError('invalid asset id type')
+        if asset_id < 0:
+            return {'error': 'null_asset'}
+        return {'id': asset_id, 'status': 'active'}
 
-    def process_batch(self, user_ids: list):
-        results = [self.fetch_user_data(uid) for uid in user_ids]
-        return [res for res in results if res is not None]
+def safe_process(data):
+    try:
+        return data.get('id', 0) if data else None
+    except AttributeError:
+        return None
