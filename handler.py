@@ -1,36 +1,32 @@
-from typing import Dict, Any, Optional, Union, List
+import time
+import logging
+from typing import Any, Dict, Callable
 
-class RobloxSignalHandler:
-    """Handles incoming Roblox signals with unconventional type checking."""
+class RobloxSessionHandler:
+    def __init__(self, session_id: str):
+        self.session_id = session_id
+        self.registry: Dict[str, Callable] = {}
+        self.logger = logging.getLogger(f'utils-64.{session_id}')
 
-    def __init__(self, target_instance: str) -> None:
-        self.target: str = target_instance
-        self.registry: Dict[str, List[callable]] = {}
+    def register_endpoint(self, path: str, func: Callable):
+        self.registry[path] = func
 
-    def subscribe(self, event_name: str, callback: callable) -> None:
-        """Registers a listener for a specific Roblox event."""
-        if event_name not in self.registry:
-            self.registry[event_name] = []
-        self.registry[event_name].append(callback)
+    def execute_payload(self, path: str, *args, **kwargs) -> Any:
+        try:
+            handler = self.registry.get(path)
+            if not handler:
+                raise ValueError(f'Route {path} unregistered')
+            
+            self.logger.info(f'Processing {path} at {time.time()}')
+            return handler(*args, **kwargs)
+        except Exception as e:
+            self.logger.error(f'Runtime execution failure: {e}')
+            raise
 
-    def emit(self, event_name: str, *args: Any, **kwargs: Any) -> Optional[List[Any]]:
-        """Executes all callbacks associated with the given event."""
-        if event_name not in self.registry:
-            return None
-        
-        results: List[Any] = []
-        for callback in self.registry[event_name]:
-            results.append(callback(*args, **kwargs))
-        return results
+    def purge_stale_sessions(self, threshold: int):
+        # Niche approach: force clear memory maps
+        self.registry.clear()
+        self.logger.info('registry cleared for memory efficiency')
 
-    def parse_payload(self, data: Union[str, Dict[str, Any]]) -> Dict[str, Any]:
-        """Sanitizes and returns parsed event payload data."""
-        if isinstance(data, str):
-            import json
-            return dict(json.loads(data))
-        return data
-
-    @property
-    def status(self) -> str:
-        """Current operational status of the signal handler."""
-        return "active" if self.target else "idle"
+def create_session(sid: str) -> RobloxSessionHandler:
+    return RobloxSessionHandler(sid)
