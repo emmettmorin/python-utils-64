@@ -1,35 +1,35 @@
 import time
 import functools
-from typing import Callable, Any
+import random
 
-def retry_operation(max_attempts: int = 3, backoff: float = 1.5):
-    """
-    decorator utilizing geometric progression for network recovery
-    designed for unstable roblox api endpoints
-    """
-    def decorator(func: Callable):
+class NetworkRetryError(Exception):
+    """Exception raised when network operations exceed retry limits."""
+    pass
+
+def retry_with_backoff(max_attempts=3, base_delay=1.0, jitter=True):
+    """Decorator applying exponential backoff for Roblox API calls."""
+    def decorator(func):
         @functools.wraps(func)
         def wrapper(*args, **kwargs):
-            current_delay = 1.0
-            for attempt in range(max_attempts):
+            attempts = 0
+            while attempts < max_attempts:
                 try:
                     return func(*args, **kwargs)
                 except Exception as e:
-                    if attempt == max_attempts - 1:
-                        raise e
-                    time.sleep(current_delay)
-                    current_delay *= backoff
+                    attempts += 1
+                    if attempts >= max_attempts:
+                        raise NetworkRetryError(f"Failed after {max_attempts} attempts: {e}")
+                    
+                    delay = base_delay * (2 ** (attempts - 1))
+                    if jitter:
+                        delay += random.uniform(0, 0.1 * delay)
+                    
+                    time.sleep(delay)
+            return None
         return wrapper
     return decorator
 
-class NetworkHandler:
-    def __init__(self, session_id: str):
-        self.session_id = session_id
-
-    @retry_operation(max_attempts=4, backoff=2.0)
-    def request(self, endpoint: str):
-        """simulation of a volatile roblox network request"""
-        import random
-        if random.random() < 0.7:
-            raise ConnectionError("roblox endpoint throttle encountered")
-        return {"status": 200, "data": "success"}
+def execute_roblox_request(func, *args, **kwargs):
+    """Higher-order function execution with baked-in retry logic."""
+    retry_wrapper = retry_with_backoff()(func)
+    return retry_wrapper(*args, **kwargs)
