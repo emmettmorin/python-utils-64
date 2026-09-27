@@ -1,49 +1,53 @@
 # python-utils-64
 
-`python-utils-64` is a lightweight Python toolkit designed to streamline interactions with the Roblox ecosystem. It simplifies complex API tasks, allowing developers to manage assets, player data, and game configurations with minimal overhead.
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
+`python-utils-64` is a high-performance Python library designed for Roblox developers to streamline external data encoding, asset management, and Luau-compatible serialization. It simplifies complex interactions with Roblox Open Cloud APIs and optimizes data payload handling for external databases and webhooks.
 
 ## Features
 
-*   **Roblox Cookie Authenticator:** Securely manage sessions using session cookies with automated CSRF token handling.
-*   **Asset Uploader:** Rapidly batch upload images, decals, or audio files to the Roblox creator dashboard via the internal API.
-*   **Game State Monitor:** Real-time polling utilities to track server status, player counts, and API health endpoints.
-*   **DataStore Interop:** Efficient helper methods for interacting with Roblox DataStore V2, including custom serialization and batch querying.
+* **Luau Table Serializer**: Convert complex Python dictionaries and lists directly into optimized Luau table strings for seamless ingestion by Roblox servers.
+* **Open Cloud Wrapper**: Simplified interface for interacting with Roblox Datastores, MessagingService, and Place Publishing APIs.
+* **RBXM/RBXMX Parser**: Deconstruct and analyze binary and XML Roblox model files directly within Python environments.
+* **Security Validation**: Built-in validation utilities for checking `.ROBLOSECURITY` cookie expiration and API key permissions.
 
 ## Installation
 
-Install the package directly via pip:
+Install the package via pip:
 
 ```bash
 pip install python-utils-64
 ```
 
-To work with the latest features from the development branch:
+## Quick Start
 
-```bash
-git clone https://github.com/Developer/python-utils-64.git
-cd python-utils-64
-pip install -r requirements.txt
-```
-
-## Basic Usage
-
-The following example demonstrates how to initialize a client and fetch details for a specific Roblox place:
+Here is a quick example of how to validate a cookie and serialize game data for a Roblox Datastore using `python-utils-64`:
 
 ```python
-from utils64 import RobloxClient
+from python_utils_64 import RobloxClient, LuauSerializer
 
-# Initialize with your session cookie
-client = RobloxClient(cookie=".ROBLOSECURITY_TOKEN_HERE")
+# Initialize the client using Roblox Open Cloud
+client = RobloxClient(api_key="your_open_cloud_api_key")
 
-# Fetch game metadata
-place_info = client.games.get_place_details(place_id=123456789)
+# Format Python data into a Luau-compatible table string
+player_data = {
+    "username": "Builderman",
+    "level": 75,
+    "inventory": ["Sword", "Shield", "Potion"]
+}
+luau_string = LuauSerializer.to_table(player_data)
+print(luau_string)
+# Output: {username = "Builderman", level = 75, inventory = {"Sword", "Shield", "Potion"}}
 
-print(f"Game Name: {place_info.name}")
-print(f"Active Players: {place_info.player_count}")
+# Publish data to a Roblox Datastore
+datastore = client.get_datastores(universe_id=123456789)
+datastore.set_entry(
+    datastore_name="PlayerData", 
+    key="User_2", 
+    value=player_data
+)
 ```
 
 ## License
-
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
