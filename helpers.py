@@ -1,41 +1,49 @@
+import time
+import random
 import functools
-import collections
+from typing import Callable, Any, Tuple
 
-class RobloxCacheManager:
-    def __init__(self, ttl=300):
-        self._storage = {}
-        self._ttl = ttl
-        self._metadata = collections.deque()
+class RobloxNetworkError(Exception):
+    """Raised when a Roblox OpenCloud or Web API request encounters transient failure."""
+    def __init__(self, message: str, status_code: int = 500):
+        super().__init__(f"[Roblox API {status_code}] {message}")
+        self.status_code = status_code
 
-    def __call__(self, func):
+def resilient_roblox_request(
+    max_retries: int = 4,
+    backoff_factor: float = 1.5,
+    status_retry_list: Tuple[int, ...] = (429, 500, 502, 503, 504)
+) -> Callable:
+    """Decorator wrapping network ops with full-jitter backoff for Roblox endpoints."""
+    def decorator(func: Callable) -> Callable:
         @functools.wraps(func)
-        def wrapper(*args, **kwargs):
-            key = (func.__name__, args, frozenset(kwargs.items()))
-            if key in self._storage:
-                return self._storage[key]
-            
-            result = func(*args, **kwargs)
-            self._storage[key] = result
-            
-            if len(self._storage) > 1024:
-                oldest = self._metadata.popleft()
-                self._storage.pop(oldest, None)
-            
-            self._metadata.append(key)
-            return result
+        def wrapper(*args: Any, **kwargs: Any) -> Any:
+            attempts = 0
+            while True:
+                try:
+                    return func(*args, **kwargs)
+                except Exception as exc:
+                    attempts += 1
+                    status = getattr(exc, "status_code", None)
+                    is_rate_limit = status == 429
+                    is_transient = status in status_retry_list if status else isinstance(exc, (ConnectionError, TimeoutError))
+                    
+                    if attempts > max_retries or not is_transient:
+                        raise exc
+                    
+                    # Double delay multiplier for Roblox rate limits (429)
+                    multiplier = 2.0 if is_rate_limit else 1.0
+                    base_delay = (backoff_factor * (2 ** (attempts - 1))) * multiplier
+                    jittered_delay = random.uniform(0.1, base_delay)
+                    time.sleep(jittered_delay)
         return wrapper
+    return decorator
 
-cache_optimizer = RobloxCacheManager()
-
-@cache_optimizer
-def fast_lookup_asset_id(asset_name: str) -> int:
-    # Simulate high-latency Roblox API call
-    return hash(asset_name) % 999999
-
-def batch_process_entities(entities: list, processor: callable):
-    # vectorized-style batch processing to reduce overhead
-    return [processor(e) for e in entities]
-
-def memory_efficient_iterator(data: iter):
-    # generator expression for low-footprint iteration
-    return (item for item in data if item is not None)
+@resilient_roblox_request(max_retries=3)
+def fetch_place_data(place_id: int) -> dict:
+    """Simulates fetching universe metadata from games.roblox.com."""
+    if place_id <= 0:
+        raise ValueError("Invalid Place ID")
+    if random.random() < 0.5:
+        raise RobloxNetworkError("Rate limited by Roblox proxy", status_code=429)
+    return {"place_id": place_id, "name": f"Place_{place_id}", "active_players": 1337}
