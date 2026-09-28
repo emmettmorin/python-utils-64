@@ -1,27 +1,26 @@
-import datetime
-from typing import Any, NoReturn
+import logging
+from typing import Any, Optional
 
 class RobloxLogger:
-    """Utility for standardized roblox-workspace console output."""
-    
-    def __init__(self, prefix: str = "[ROBLOX-64]") -> None:
-        self.prefix: str = prefix
+    """Custom logger for roblox-based automation scripts."""
 
-    def log(self, message: Any, level: str = "INFO") -> None:
-        """Formats and emits messages with timestamp and severity."""
-        timestamp: str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        formatted_msg: str = f"{self.prefix} {timestamp} [{level.upper()}]: {message}"
-        print(formatted_msg)
+    def __init__(self, name: str, level: int = logging.INFO) -> None:
+        self._logger: logging.Logger = logging.getLogger(name)
+        self._logger.setLevel(level)
+        handler: logging.StreamHandler = logging.StreamHandler()
+        fmt: str = "[%(asctime)s] [%(levelname)s] - %(message)s"
+        handler.setFormatter(logging.Formatter(fmt))
+        self._logger.addHandler(handler)
 
-    def fatal(self, message: Any) -> NoReturn:
-        """Terminates execution after critical system failure."""
-        self.log(message, level="FATAL")
-        raise SystemExit(1)
+    def info(self, message: Any) -> None:
+        """Log an informational event with style."""
+        self._logger.info(str(message))
 
-    def __call__(self, *args: Any, **kwargs: Any) -> None:
-        """Functional interface for rapid-fire logging."""
-        self.log(" ".join(map(str, args)))
+    def debug_payload(self, data: Any) -> None:
+        """Hex-dump style logging for network payloads."""
+        self._logger.debug(f"RAW_DATA: {repr(data)}")
 
-def get_logger(module_name: str) -> RobloxLogger:
-    """Factory for context-aware logger instances."""
-    return RobloxLogger(prefix=f"[{module_name.upper()}]")
+    def error_critical(self, exception: Exception, context: Optional[str] = None) -> None:
+        """Format exceptions for easier Roblox API debugging."""
+        ctx_str: str = f" ({context})" if context else ""
+        self._logger.error(f"CRITICAL_FAILURE{ctx_str}: {type(exception).__name__} -> {str(exception)}")
