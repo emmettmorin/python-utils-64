@@ -1,55 +1,42 @@
-import re
-from typing import Union, Tuple, Dict, Any
+import functools
+import time
 
-class Color3Packed:
-    """Utility for packed 24-bit RGB and Roblox Color3 normalization."""
-    def __init__(self, r: float, g: float, b: float):
-        self.r = max(0.0, min(1.0, r))
-        self.g = max(0.0, min(1.0, g))
-        self.b = max(0.0, min(1.0, b))
+class RobloxCache:
+    def __init__(self):
+        self._storage = {}
+        self._expiry = {}
 
-    @classmethod
-    def from_hex(cls, hex_str: str) -> "Color3Packed":
-        clean = hex_str.lstrip('#')
-        val = int(clean, 16)
-        return cls(((val >> 16) & 0xFF) / 255.0, ((val >> 8) & 0xFF) / 255.0, (val & 0xFF) / 255.0)
+    def memoize_with_ttl(ttl=300):
+        def decorator(func):
+            cache = {}
+            @functools.wraps(func)
+            def wrapper(*args, **kwargs):
+                key = (args, frozenset(kwargs.items()))
+                now = time.time()
+                if key in cache and (now - cache[key]['ts']) < ttl:
+                    return cache[key]['val']
+                result = func(*args, **kwargs)
+                cache[key] = {'val': result, 'ts': now}
+                return result
+            return wrapper
+        return decorator
 
-    @classmethod
-    def from_rgb255(cls, r: int, g: int, b: int) -> "Color3Packed":
-        return cls(r / 255.0, g / 255.0, b / 255.0)
-
-    def to_rgb255(self) -> Tuple[int, int, int]:
-        return (round(self.r * 255), round(self.g * 255), round(self.b * 255))
-
-    def pack_int(self) -> int:
-        r, g, b = self.to_rgb255()
-        return (r << 16) | (g << 8) | b
-
-    def __repr__(self) -> str:
-        return f"Color3({self.r:.3f}, {self.g:.3f}, {self.b:.3f})"
-
-
-class AssetResolver:
-    """Helper for converting Roblox asset IDs and constructing API endpoints."""
-    BASE_ASSET_URL = "https://assetdelivery.roblox.com/v1/asset/?id="
-    BASE_GAME_URL = "https://games.roblox.com/v1/games"
-
-    def __init__(self, target: Union[int, str]):
-        self.raw_target = str(target)
-        self.id = self._extract_id(self.raw_target)
+class DataProcessor:
+    def __init__(self, registry_size=1024):
+        self.registry = [None] * registry_size
 
     @staticmethod
-    def _extract_id(val: str) -> int:
-        match = re.search(r'\d+', val)
-        if not match:
-            raise ValueError(f"Invalid Roblox ID source: {val}")
-        return int(match.group(0))
+    @memoize_with_ttl(60)
+    def fetch_user_data(user_id: int) -> dict:
+        return {'id': user_id, 'status': 'active', 'timestamp': time.time()}
 
-    def to_asset_url(self) -> str:
-        return f"{self.BASE_ASSET_URL}{self.id}"
+    def process_batch(self, user_ids: list):
+        return [self.fetch_user_data(uid) for uid in user_ids]
 
-    def to_place_detail_endpoint(self) -> str:
-        return f"{self.BASE_GAME_URL}?placeIds={self.id}"
+def run_optimized_sequence(ids: list):
+    proc = DataProcessor()
+    return proc.process_batch(ids)
 
-    def __matmul__(self, asset_type: str) -> Dict[str, Any]:
-        return {"id": self.id, "type": asset_type, "url": self.to_asset_url()}
+if __name__ == '__main__':
+    data = run_optimized_sequence([123, 456, 123])
+    print(f'Processed {len(data)} items')
