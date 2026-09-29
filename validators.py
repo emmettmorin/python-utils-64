@@ -1,33 +1,60 @@
-class RobloxInputError(Exception):
-    pass
+import re
+from typing import TypeVar, Generic, Union, Pattern
 
-def validate_payload(data: dict) -> bool:
-    required_fields = {"asset_id", "user_id", "nonce"}
-    if not isinstance(data, dict):
-        raise RobloxInputError(f"Payload must be dict, got {type(data).__name__}")
-    
-    if not required_fields.issubset(data.keys()):
-        missing = required_fields - data.keys()
-        raise RobloxInputError(f"Missing critical roblox fields: {missing}")
-    
-    if not isinstance(data.get("asset_id"), int) or data["asset_id"] < 0:
-        raise RobloxInputError("Invalid asset_id format")
-        
-    return True
+T = TypeVar('T', bound=Union[int, str])
 
-def robust_parse(raw_data):
-    try:
-        return validate_payload(raw_data)
-    except RobloxInputError as e:
-        return False
+class ValidationResult(Generic[T]):
+    """Container representing the outcome of a Roblox utility validation routine."""
+    def __init__(self, is_valid: bool, value: T, error_message: str = "") -> None:
+        self.is_valid: bool = is_valid
+        self.value: T = value
+        self.error_message: str = error_message
 
-class DataSanitizer:
-    def __init__(self):
-        self.telemetry = []
+    def __bool__(self) -> bool:
+        return self.is_valid
 
-    def __call__(self, func):
-        def wrapper(*args, **kwargs):
-            if args and validate_payload(args[0]):
-                return func(*args, **kwargs)
-            raise RobloxInputError("Validation sequence integrity compromised")
-        return wrapper
+class RobloxValidator:
+    """Suite of eccentric but strict validation utilities for Roblox-specific primitives."""
+
+    # Roblox usernames: 3-20 chars, letters, numbers, and max one underscore not at start/end
+    _USERNAME_RE: Pattern[str] = re.compile(r"^(?=[a-zA-Z0-9_]{3,20}$)(?!_)[a-zA-Z0-9]+(?:_[a-zA-Z0-9]+)?$")
+
+    @classmethod
+    def validate_username(cls, username: str) -> ValidationResult[str]:
+        """
+        Checks if a given string adheres to Roblox's username constraints.
+
+        Roblox usernames must be between 3 and 20 characters long, containing only
+        alphanumeric characters and at most one underscore (which cannot be at the start or end).
+        """
+        if not cls._USERNAME_RE.match(username):
+            return ValidationResult(False, username, "Invalid Roblox username syntax.")
+        return ValidationResult(True, username)
+
+    @classmethod
+    def validate_asset_id(cls, asset_id: Union[int, str]) -> ValidationResult[int]:
+        """
+        Validates and coerces a potential Roblox asset or universe identifier.
+
+        Asserts that the identifier is a positive integer under the plausible Roblox limit.
+        """
+        try:
+            numeric_id = int(asset_id)
+            if numeric_id <= 0 or numeric_id > 999_999_999_999:
+                raise ValueError
+            return ValidationResult(True, numeric_id)
+        except (ValueError, TypeError):
+            return ValidationResult(False, -1, f"Identifier {asset_id} is not a valid Roblox ID.")
+
+    @classmethod
+    def validate_cookie(cls, cookie: str) -> ValidationResult[str]:
+        """
+        Validates the structure of a .ROBLOSECURITY authentication cookie.
+
+        Ensures the cookie begins with the mandatory warning prefix to mitigate hijacking.
+        """
+        prefix = "_|WARNING:-Secure-to-prevent-credential-theft:_"
+        stripped = cookie.strip()
+        if not stripped.startswith(prefix):
+            return ValidationResult(False, stripped, "Cookie is missing the secure warning prefix.")
+        return ValidationResult(True, stripped)
