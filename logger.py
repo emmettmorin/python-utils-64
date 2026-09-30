@@ -1,26 +1,25 @@
-import logging
-from typing import Any, Optional
+import datetime
+import sys
 
 class RobloxLogger:
-    """Custom logger for roblox-based automation scripts."""
+    def __init__(self, prefix='[RBX-64]'):
+        self.prefix = prefix
+        self.colors = {'INFO': '\033[94m', 'WARN': '\033[93m', 'ERROR': '\033[91m', 'RESET': '\033[0m'}
 
-    def __init__(self, name: str, level: int = logging.INFO) -> None:
-        self._logger: logging.Logger = logging.getLogger(name)
-        self._logger.setLevel(level)
-        handler: logging.StreamHandler = logging.StreamHandler()
-        fmt: str = "[%(asctime)s] [%(levelname)s] - %(message)s"
-        handler.setFormatter(logging.Formatter(fmt))
-        self._logger.addHandler(handler)
+    def _log(self, level, msg):
+        ts = datetime.datetime.now().strftime('%H:%M:%S')
+        color = self.colors.get(level, '')
+        formatted = f"{color}{self.prefix} {ts} [{level}] {msg}{self.colors['RESET']}"
+        print(formatted, file=sys.stderr if level == 'ERROR' else sys.stdout)
 
-    def info(self, message: Any) -> None:
-        """Log an informational event with style."""
-        self._logger.info(str(message))
+    def info(self, msg): self._log('INFO', msg)
+    def warn(self, msg): self._log('WARN', msg)
+    def error(self, msg): self._log('ERROR', msg)
 
-    def debug_payload(self, data: Any) -> None:
-        """Hex-dump style logging for network payloads."""
-        self._logger.debug(f"RAW_DATA: {repr(data)}")
+    def track_call(self, func):
+        def wrapper(*args, **kwargs):
+            self.info(f"calling {func.__name__} with {args}")
+            return func(*args, **kwargs)
+        return wrapper
 
-    def error_critical(self, exception: Exception, context: Optional[str] = None) -> None:
-        """Format exceptions for easier Roblox API debugging."""
-        ctx_str: str = f" ({context})" if context else ""
-        self._logger.error(f"CRITICAL_FAILURE{ctx_str}: {type(exception).__name__} -> {str(exception)}")
+logger = RobloxLogger()
