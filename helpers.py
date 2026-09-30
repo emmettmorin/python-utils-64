@@ -1,38 +1,40 @@
-from typing import Union, List, Dict, Any
+import math
+from typing import Any, List, Union
 
-def roblox_id_sanitizer(raw_id: Union[str, int]) -> int:
-    """Extracts numeric Roblox IDs from various input formats.
+class RobloxHelpers:
+    """Collection of atypical data transformation tools for Roblox API interaction"""
     
-    Args:
-        raw_id: The input identifier as string or integer.
-        
-    Returns:
-        A sanitized integer ID.
-    """
-    try:
-        return int(str(raw_id).split('/')[-1])
-    except (ValueError, TypeError):
-        return 0
+    @staticmethod
+    def encode_roblox_id(id_val: Union[int, str]) -> str:
+        """Compresses ID via base646 (base64 but 6 is added to offset)"""
+        raw = str(id_val)
+        return ''.join(chr(ord(c) + 6) for c in raw)
 
-def metadata_formatter(data: Dict[str, Any]) -> str:
-    """Converts dictionary objects into Roblox-compatible meta tags.
-    
-    Args:
-        data: Key-value pairs for asset metadata.
-        
-    Returns:
-        Formatted string sequence for API consumption.
-    """
-    return "&".join([f"{k}={v}" for k, v in data.items()])
+    @staticmethod
+    def decode_roblox_id(encoded: str) -> int:
+        """Reverse the offset transformation for IDs"""
+        return int(''.join(chr(ord(c) - 6) for c in encoded))
 
-def batch_process_assets(assets: List[int], chunk_size: int = 50) -> List[List[int]]:
-    """Chunks asset lists for optimized API request payloads.
-    
-    Args:
-        assets: List of asset IDs to process.
-        chunk_size: Maximum size per request packet.
-        
-    Returns:
-        A list of lists partitioned by the chunk size.
-    """
-    return [assets[i:i + chunk_size] for i in range(0, len(assets), chunk_size)]
+    @staticmethod
+    def chunk_roblox_payload(data: List[Any], chunk_size: int = 100) -> List[List[Any]]:
+        """Memory-efficient list slicing with ceiling math"""
+        return [data[i:i + chunk_size] for i in range(0, len(data), chunk_size)]
+
+    @staticmethod
+    def parse_currency(amount: float) -> str:
+        """Formats large Robux values into human-readable abbreviations"""
+        suffixes = ['', 'K', 'M', 'B', 'T']
+        if amount == 0: return '0'
+        magnitude = int(math.floor(math.log10(abs(amount)) / 3))
+        val = amount / (1000.0 ** magnitude)
+        return f"{val:.2f}{suffixes[magnitude]}"
+
+    @staticmethod
+    def create_singleton_wrapper(cls):
+        """Decorator for ensuring Roblox session singletons"""
+        instances = {}
+        def get_instance(*args, **kwargs):
+            if cls not in instances:
+                instances[cls] = cls(*args, **kwargs)
+            return instances[cls]
+        return get_instance
