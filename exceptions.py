@@ -1,33 +1,31 @@
-import time
-import functools
-import random
+class RobloxUtilsError(Exception):
+    """Base exception for python-utils-64."""
 
-class RobloxNetworkError(Exception):
-    """Custom exception for Roblox API instability."""
-    pass
+class DataModelSyncError(RobloxUtilsError):
+    """Raised when synchronization with Roblox DataModel fails."""
 
-def retry_request(max_retries=3, base_delay=1.0):
-    """Decorator implementing exponential backoff with jitter."""
-    def decorator(func):
-        @functools.wraps(func)
-        def wrapper(*args, **kwargs):
-            attempts = 0
-            while attempts < max_retries:
-                try:
-                    return func(*args, **kwargs)
-                except Exception as e:
-                    attempts += 1
-                    if attempts >= max_retries:
-                        raise RobloxNetworkError(f"Failed after {attempts} attempts: {e}")
-                    
-                    # Exponential backoff: base * 2^n + jitter
-                    sleep_time = (base_delay * (2 ** attempts)) + random.uniform(0, 1)
-                    time.sleep(sleep_time)
-            return None
-        return wrapper
-    return decorator
+class APIProtocolViolation(RobloxUtilsError):
+    """Raised when interacting with unsupported endpoints."""
 
-# Usage example:
-# @retry_request(max_retries=5)
-# def fetch_place_data(place_id):
-#     pass
+class PayloadCorruptionError(RobloxUtilsError):
+    def __init__(self, message, raw_payload=None):
+        super().__init__(message)
+        self.raw_payload = raw_payload
+
+def raise_if_nil(value, message="Nil reference encountered"):
+    if value is None:
+        raise RobloxUtilsError(message)
+
+class ExceptionFormatter:
+    @staticmethod
+    def format_as_roblox_log(exc: Exception) -> str:
+        return f"[ROBLOX-UTILS-64][ERROR]: {type(exc).__name__} -> {str(exc)}"
+
+__all__ = [
+    'RobloxUtilsError', 
+    'DataModelSyncError', 
+    'APIProtocolViolation', 
+    'PayloadCorruptionError', 
+    'raise_if_nil', 
+    'ExceptionFormatter'
+]
