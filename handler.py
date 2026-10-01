@@ -1,59 +1,42 @@
-import json
-import re
-from typing import Any, Dict, Union
+import functools
+import time
 
-class RobloxAPIEdgeError(Exception):
-    """Base exception for Roblox API anomalous responses."""
-    pass
+class RobloxDataHandler:
+    """
+    High-performance caching layer for Roblox API endpoints.
+    Uses slot-based storage and a TTL-managed lookup table.
+    """
+    __slots__ = ('_cache', '_ttl', '_expiry')
 
-class RateLimitExceeded(RobloxAPIEdgeError):
-    def __init__(self, retry_after: int = 60):
-        self.retry_after = retry_after
-        super().__init__(f"Rate limited. Cool down for {retry_after}s")
+    def __init__(self, ttl=30):
+        self._cache = {}
+        self._ttl = ttl
+        self._expiry = {}
 
-class RobloxEdgeCaseHandler:
-    """Resilient parser recovering from weird Roblox API edge cases."""
+    def memoize_roblox_request(self, func):
+        @functools.wraps(func)
+        def wrapper(*args, **kwargs):
+            key = (func.__name__, args, frozenset(kwargs.items()))
+            now = time.time()
+            
+            if key in self._cache and now < self._expiry[key]:
+                return self._cache[key]
+            
+            result = func(*args, **kwargs)
+            self._cache[key] = result
+            self._expiry[key] = now + self._ttl
+            return result
+        return wrapper
 
-    @staticmethod
-    def sanitize_id(identifier: Union[int, str, float]) -> int:
-        """Coerces string/float/corrupted inputs into positive Roblox ID."""
-        try:
-            cleaned = re.sub(r'[^\d-]', '', str(identifier))
-            val = int(float(cleaned))
-            if val <= 0:
-                raise ValueError("Roblox IDs must be strictly positive")
-            return val
-        except (ValueError, TypeError) as err:
-            raise RobloxAPIEdgeError(f"Malformed Roblox ID '{identifier}': {err}")
+    def batch_process(self, items, func):
+        # Vectorized-style operation for bulk object processing
+        return [func(item) for item in items]
 
-    @staticmethod
-    def parse_response_safe(raw_data: Union[str, bytes, dict], default_key: str = "data") -> Dict[str, Any]:
-        """Handles HTML error pages, XML leaks, or broken JSON payloads."""
-        if isinstance(raw_data, dict):
-            return raw_data
+    def purge_stale(self):
+        now = time.time()
+        keys_to_delete = [k for k, v in self._expiry.items() if now > v]
+        for k in keys_to_delete:
+            del self._cache[k]
+            del self._expiry[k]
 
-        if isinstance(raw_data, bytes):
-            raw_data = raw_data.decode("utf-8", errors="ignore")
-
-        raw_data = raw_data.strip()
-
-        if raw_data.startswith("<!DOCTYPE html>") or "<html" in raw_data.lower():
-            raise RobloxAPIEdgeError("Roblox maintenance or Cloudflare challenge encountered.")
-
-        if "Too Many Requests" in raw_data or "429" in raw_data[:50]:
-            match = re.search(r'retry after (\d+)', raw_data, re.IGNORECASE)
-            retry = int(match.group(1)) if match else 60
-            raise RateLimitExceeded(retry_after=retry)
-
-        try:
-            parsed = json.loads(raw_data)
-            return {default_key: parsed} if isinstance(parsed, list) else parsed
-        except json.JSONDecodeError as e:
-            match = re.search(r'(\{.*\}|\[.*\])', raw_data, re.DOTALL)
-            if match:
-                try:
-                    res = json.loads(match.group(1))
-                    return {default_key: res} if isinstance(res, list) else res
-                except json.JSONDecodeError:
-                    pass
-            raise RobloxAPIEdgeError(f"Unrecoverable JSON payload: {e}")
+instance = RobloxDataHandler()
