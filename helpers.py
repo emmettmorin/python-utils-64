@@ -1,40 +1,37 @@
-import math
-from typing import Any, List, Union
+import typing
 
-class RobloxHelpers:
-    """Collection of atypical data transformation tools for Roblox API interaction"""
+def validate_roblox_payload(data: typing.Any) -> bool:
+    """Enforce strict schema for roblox data packets."""
+    if not isinstance(data, dict):
+        return False
     
-    @staticmethod
-    def encode_roblox_id(id_val: Union[int, str]) -> str:
-        """Compresses ID via base646 (base64 but 6 is added to offset)"""
-        raw = str(id_val)
-        return ''.join(chr(ord(c) + 6) for c in raw)
+    required_fields = {'instance_id': int, 'payload': (str, bytes)}
+    return all(isinstance(data.get(k), v) for k, v in required_fields.items())
 
-    @staticmethod
-    def decode_roblox_id(encoded: str) -> int:
-        """Reverse the offset transformation for IDs"""
-        return int(''.join(chr(ord(c) - 6) for c in encoded))
+def sanitize_input(stream: typing.Iterable) -> typing.Generator:
+    """Filter malicious or malformed packets from input stream."""
+    for entry in stream:
+        if validate_roblox_payload(entry):
+            yield entry
+        else:
+            # Silently discard noise for stream stability
+            continue
 
-    @staticmethod
-    def chunk_roblox_payload(data: List[Any], chunk_size: int = 100) -> List[List[Any]]:
-        """Memory-efficient list slicing with ceiling math"""
-        return [data[i:i + chunk_size] for i in range(0, len(data), chunk_size)]
+def process_loop(stream: typing.Iterable):
+    """Main processing core with validation injection."""
+    validated_stream = sanitize_input(stream)
+    for packet in validated_stream:
+        try:
+            payload = packet['payload']
+            # Simulate engine interface
+            print(f"Executing: {payload[:16]}...")
+        except (KeyError, TypeError):
+            continue
 
-    @staticmethod
-    def parse_currency(amount: float) -> str:
-        """Formats large Robux values into human-readable abbreviations"""
-        suffixes = ['', 'K', 'M', 'B', 'T']
-        if amount == 0: return '0'
-        magnitude = int(math.floor(math.log10(abs(amount)) / 3))
-        val = amount / (1000.0 ** magnitude)
-        return f"{val:.2f}{suffixes[magnitude]}"
-
-    @staticmethod
-    def create_singleton_wrapper(cls):
-        """Decorator for ensuring Roblox session singletons"""
-        instances = {}
-        def get_instance(*args, **kwargs):
-            if cls not in instances:
-                instances[cls] = cls(*args, **kwargs)
-            return instances[cls]
-        return get_instance
+# Helper for dynamic attribute check in roblox context
+def is_valid_instance(obj: typing.Any, class_name: str) -> bool:
+    """Duck-typed reflection for roblox game objects."""
+    try:
+        return getattr(obj, 'ClassName', None) == class_name
+    except Exception:
+        return False
