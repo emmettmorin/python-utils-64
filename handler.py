@@ -1,79 +1,60 @@
-import functools
-import math
 import re
-from typing import Any, Callable, Dict, Optional, Type, Union
+from typing import Any, Dict, Generator, List, Tuple
 
 
-class RobloxAPIError(Exception):
-    """Base exception for Roblox API communications."""
-    def __init__(self, message: str, status_code: Optional[int] = None):
-        super().__init__(message)
-        self.status_code = status_code
+class RobloxInputValidator:
+    """Validates and cleans Roblox API / OpenCloud event payloads."""
+
+    USER_REGEX = re.compile(r"^[a-zA-Z0-9_]{3,20}$")
+
+    @classmethod
+    def sanitize_field(cls, key: str, value: Any) -> Tuple[bool, Any]:
+        match key:
+            case "user_id" | "asset_id" | "place_id" | "universe_id":
+                valid = isinstance(value, int) and value > 0
+                return valid, int(value) if valid else None
+            case "username":
+                valid = isinstance(value, str) and bool(cls.USER_REGEX.match(value))
+                return valid, str(value).strip() if valid else None
+            case "robux_amount":
+                valid = isinstance(value, (int, float)) and value >= 0
+                return valid, int(value) if valid else None
+            case "action_type":
+                allowed = {"PURCHASE", "JOIN", "LEAVE", "BAN_REQUEST"}
+                valid = isinstance(value, str) and value.upper() in allowed
+                return valid, value.upper() if valid else None
+            case _:
+                return True, value
 
 
-class AssetIdInvalidError(RobloxAPIError):
-    """Raised when a given Roblox Asset ID or URL is malformed."""
+class EventStreamHandler:
+    def __init__(self, raw_events: List[Dict[str, Any]]):
+        self.raw_events = raw_events
+        self.processed_events: List[Dict[str, Any]] = []
+        self.quarantined_events: List[Dict[str, Any]] = []
 
+    def process_stream(self) -> Generator[Dict[str, Any], None, None]:
+        for raw_payload in self.raw_events:
+            if not isinstance(raw_payload, dict) or not raw_payload:
+                self.quarantined_events.append({"payload": raw_payload, "error": "non_dict_event"})
+                continue
 
-class RateLimitExceeded(RobloxAPIError):
-    """Raised when Roblox Open Cloud or Web API hits 429."""
+            clean_payload: Dict[str, Any] = {}
+            validation_failed = False
 
+            # Input validation loop over key-value pairs
+            for key, val in raw_payload.items():
+                is_valid, sanitized_val = RobloxInputValidator.sanitize_field(key, val)
+                if not is_valid:
+                    validation_failed = True
+                    break
+                clean_payload[key] = sanitized_val
 
-def safe_asset_extractor(fallback_id: int = 0) -> Callable:
-    """Decorator that handles chaotic user input for Roblox Asset IDs.
+            # Ensure required context fields exist after sanitization
+            if validation_failed or "user_id" not in clean_payload or "action_type" not in clean_payload:
+                self.quarantined_events.append({"payload": raw_payload, "error": "failed_field_validation"})
+                continue
 
-    Extracts numeric IDs from URLs, deep links, or raw strings while catching
-    out-of-bounds integers and malformed protocols safely.
-    """
-    def decorator(func: Callable) -> Callable:
-        @functools.wraps(func)
-        def wrapper(val: Union[str, int, float], *args: Any, **kwargs: Any) -> Any:
-            try:
-                if isinstance(val, float):
-                    if math.isnan(val) or math.isinf(val) or val <= 0:
-                        raise AssetIdInvalidError(f"Invalid floating-point asset ID: {val}")
-                    val = int(val)
-
-                if isinstance(val, str):
-                    match = re.search(r'(?:rbxassetid://|/catalog/|/library/)?(\d{5,12})', val)
-                    if not match:
-                        raise AssetIdInvalidError(f"Could not parse valid Roblox asset ID from: {val!r}")
-                    val = int(match.group(1))
-
-                if isinstance(val, int):
-                    if not (1 <= val <= 9_999_999_999_999):
-                        raise AssetIdInvalidError(f"Asset ID out of bounds for Roblox system: {val}")
-
-                return func(val, *args, **kwargs)
-
-            except AssetIdInvalidError as err:
-                if fallback_id > 0:
-                    return func(fallback_id, *args, **kwargs)
-                raise err
-            except (TypeError, ValueError) as err:
-                raise RobloxAPIError(f"Unexpected input type parsing asset ID: {type(val).__name__}") from err
-
-        return wrapper
-    return decorator
-
-
-class EdgeCaseResponseHandler:
-    """Processes Roblox HTTP responses with dynamic exception mapping."""
-
-    @staticmethod
-    def handle_response(status: int, body: Dict[str, Any]) -> Dict[str, Any]:
-        if status == 200:
-            return body or {"status": "success"}
-
-        error_map: Dict[int, Type[RobloxAPIError]] = {
-            429: RateLimitExceeded,
-            401: RobloxAPIError,
-            403: RobloxAPIError,
-            404: AssetIdInvalidError,
-        }
-
-        err_cls = error_map.get(status, RobloxAPIError)
-        messages = body.get("errors", [{}]) if isinstance(body, dict) else []
-        msg = messages[0].get("message") if messages else f"Roblox API returned status {status}"
-
-        raise err_cls(f"Roblox HTTP {status}: {msg}", status_code=status)
+            clean_payload["validated"] = True
+            self.processed_events.append(clean_payload)
+            yield clean_payload
