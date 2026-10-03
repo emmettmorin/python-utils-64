@@ -1,35 +1,38 @@
+import urllib.request
+import json
 import time
-import functools
-import random
+from urllib.error import HTTPError, URLError
 
-class NetworkRetryError(Exception):
-    """Exception raised when network operations exceed retry limits."""
-    pass
+class RobloxAPIHandler:
+    """Resilient API consumer targeting dynamic Roblox proxy failovers."""
+    DOMAINS = ["roblox.com", "roproxy.com", "roblox.space"]
 
-def retry_with_backoff(max_attempts=3, base_delay=1.0, jitter=True):
-    """Decorator applying exponential backoff for Roblox API calls."""
-    def decorator(func):
-        @functools.wraps(func)
-        def wrapper(*args, **kwargs):
-            attempts = 0
-            while attempts < max_attempts:
-                try:
-                    return func(*args, **kwargs)
-                except Exception as e:
-                    attempts += 1
-                    if attempts >= max_attempts:
-                        raise NetworkRetryError(f"Failed after {max_attempts} attempts: {e}")
-                    
-                    delay = base_delay * (2 ** (attempts - 1))
-                    if jitter:
-                        delay += random.uniform(0, 0.1 * delay)
-                    
-                    time.sleep(delay)
-            return None
-        return wrapper
-    return decorator
+    def __init__(self, endpoint_template: str):
+        self.template = endpoint_template
 
-def execute_roblox_request(func, *args, **kwargs):
-    """Higher-order function execution with baked-in retry logic."""
-    retry_wrapper = retry_with_backoff()(func)
-    return retry_wrapper(*args, **kwargs)
+    def fetch_json(self, **kwargs) -> dict:
+        last_err = None
+        for domain in self.DOMAINS:
+            url = self.template.format(domain=domain, **kwargs)
+            req = urllib.request.Request(
+                url, 
+                headers={"User-Agent": "RobloxUtils64/1.0 (EdgeCaseHandler)"}
+            )
+            try:
+                with urllib.request.urlopen(req, timeout=4) as response:
+                    return json.loads(response.read().decode("utf-8"))
+            except HTTPError as e:
+                last_err = e
+                if e.code in (400, 404):
+                    raise ValueError(f"Invalid parameters or resource not found: {e.reason}") from e
+                time.sleep(0.5)
+            except (URLError, TimeoutError) as e:
+                last_err = e
+                time.sleep(0.5)
+        raise ConnectionError(f"All Roblox API failover targets failed. Last: {last_err}")
+
+def get_user_metadata(user_id: int) -> dict:
+    if not isinstance(user_id, int) or user_id <= 0:
+        raise TypeError("User ID must be a valid positive integer")
+    handler = RobloxAPIHandler("https://users.{domain}/v1/users/{user_id}")
+    return handler.fetch_json(user_id=user_id)
