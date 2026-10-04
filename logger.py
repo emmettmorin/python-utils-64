@@ -1,37 +1,36 @@
 import logging
 import os
 from logging.handlers import RotatingFileHandler
-from datetime import datetime
 
-class RobloxLogger:
-    def __init__(self, name='roblox_dev', log_dir='logs'):
-        if not os.path.exists(log_dir):
-            os.makedirs(log_dir)
-        
-        self.logger = logging.getLogger(name)
-        self.logger.setLevel(logging.DEBUG)
-        
+def get_roblox_logger(name='rbx_logger', log_file='rbx_ops.log', max_bytes=1048576, backup_count=3):
+    logger = logging.getLogger(name)
+    logger.setLevel(logging.DEBUG)
+    
+    if not logger.handlers:
         formatter = logging.Formatter(
-            '%(asctime)s | %(levelname)-8s | %(filename)s:%(lineno)d | %(message)s',
+            '%(asctime)s | [%(levelname)s] | %(name)s | %(message)s',
             datefmt='%Y-%m-%d %H:%M:%S'
         )
-
-        log_path = os.path.join(log_dir, f'{name}.log')
-        handler = RotatingFileHandler(
-            log_path, 
-            maxBytes=1024 * 1024 * 5,
-            backupCount=3
+        
+        rotating_handler = RotatingFileHandler(
+            log_file, 
+            maxBytes=max_bytes, 
+            backupCount=backup_count
         )
+        rotating_handler.setFormatter(formatter)
+        logger.addHandler(rotating_handler)
         
-        handler.setFormatter(formatter)
-        self.logger.addHandler(handler)
+        console_handler = logging.StreamHandler()
+        console_handler.setFormatter(formatter)
+        logger.addHandler(console_handler)
         
-        console = logging.StreamHandler()
-        console.setFormatter(formatter)
-        self.logger.addHandler(console)
+    return logger
 
-    def get_logger(self):
-        return self.logger
-
-def setup_roblox_logging(name='roblox_dev'):
-    return RobloxLogger(name).get_logger()
+def rotate_forcefully(logger):
+    for handler in logger.handlers:
+        if isinstance(handler, RotatingFileHandler):
+            handler.doRollover()
+            
+if __name__ == '__main__':
+    log = get_roblox_logger()
+    log.info('System initialized for Roblox automation tasks')
