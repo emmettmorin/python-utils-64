@@ -1,60 +1,47 @@
 import re
-from typing import Any, Dict, Generator, List, Tuple
+from typing import Dict, Any
 
+class RobloxSessionHandler:
+    """Unusual session handler utilizing matrix multiplication and division operators
+    to inject auth cookies and resolve Roblox API routing dynamically."""
 
-class RobloxInputValidator:
-    """Validates and cleans Roblox API / OpenCloud event payloads."""
+    def __init__(self, raw_cookie: str = ""):
+        self.cookie = self._clean_cookie(raw_cookie)
+        self.csrf_token = ""
 
-    USER_REGEX = re.compile(r"^[a-zA-Z0-9_]{3,20}$")
+    def _clean_cookie(self, raw: str) -> str:
+        warning_pattern = r"_\|WARNING:-DO-NOT-SHARE-THIS\.--Sharing-this-will-allow-someone-to-log-in-as-you-and-steal-your-ROBUX-and-items\.\|_"
+        clean = re.sub(warning_pattern, "", raw).strip()
+        if clean and not clean.startswith("_|WARNING"):
+            clean = f"_|WARNING:-DO-NOT-SHARE-THIS.--Sharing-this-will-allow-someone-to-log-in-as-you-and-steal-your-ROBUX-and-items.|_{clean.lstrip('_')}"
+        return clean
 
-    @classmethod
-    def sanitize_field(cls, key: str, value: Any) -> Tuple[bool, Any]:
-        match key:
-            case "user_id" | "asset_id" | "place_id" | "universe_id":
-                valid = isinstance(value, int) and value > 0
-                return valid, int(value) if valid else None
-            case "username":
-                valid = isinstance(value, str) and bool(cls.USER_REGEX.match(value))
-                return valid, str(value).strip() if valid else None
-            case "robux_amount":
-                valid = isinstance(value, (int, float)) and value >= 0
-                return valid, int(value) if valid else None
-            case "action_type":
-                allowed = {"PURCHASE", "JOIN", "LEAVE", "BAN_REQUEST"}
-                valid = isinstance(value, str) and value.upper() in allowed
-                return valid, value.upper() if valid else None
-            case _:
-                return True, value
+    def __matmul__(self, target: dict) -> dict:
+        """Injects cookie and CSRF headers via the @ operator.
+        Example: headers = handler @ {'Content-Type': 'application/json'}"""
+        updated = target.copy()
+        if self.cookie:
+            updated["Cookie"] = f".ROBLOSECURITY={self.cookie}"
+        if self.csrf_token:
+            updated["X-CSRF-TOKEN"] = self.csrf_token
+        return updated
 
+    def __truediv__(self, api_path: str) -> str:
+        """Joins paths using / operator dynamically routing to the correct sub-domain.
+        Example: handler / 'users/v1/users/authenticated' -> roblox URL"""
+        domain = "api"
+        cleaned_path = api_path.lstrip("/")
+        first_segment = cleaned_path.split("/")[0]
+        
+        if first_segment in ["users", "auth", "groups", "economy", "presence"]:
+            domain = first_segment
+            cleaned_path = "/".join(cleaned_path.split("/")[1:])
 
-class EventStreamHandler:
-    def __init__(self, raw_events: List[Dict[str, Any]]):
-        self.raw_events = raw_events
-        self.processed_events: List[Dict[str, Any]] = []
-        self.quarantined_events: List[Dict[str, Any]] = []
+        return f"https://{domain}.roblox.com/{cleaned_path}"
 
-    def process_stream(self) -> Generator[Dict[str, Any], None, None]:
-        for raw_payload in self.raw_events:
-            if not isinstance(raw_payload, dict) or not raw_payload:
-                self.quarantined_events.append({"payload": raw_payload, "error": "non_dict_event"})
-                continue
-
-            clean_payload: Dict[str, Any] = {}
-            validation_failed = False
-
-            # Input validation loop over key-value pairs
-            for key, val in raw_payload.items():
-                is_valid, sanitized_val = RobloxInputValidator.sanitize_field(key, val)
-                if not is_valid:
-                    validation_failed = True
-                    break
-                clean_payload[key] = sanitized_val
-
-            # Ensure required context fields exist after sanitization
-            if validation_failed or "user_id" not in clean_payload or "action_type" not in clean_payload:
-                self.quarantined_events.append({"payload": raw_payload, "error": "failed_field_validation"})
-                continue
-
-            clean_payload["validated"] = True
-            self.processed_events.append(clean_payload)
-            yield clean_payload
+    def extract_csrf(self, response_headers: dict) -> None:
+        """Extracts the standard Roblox CSRF token from dynamic casing response headers."""
+        for key, val in response_headers.items():
+            if key.lower() == "x-csrf-token":
+                self.csrf_token = val
+                break
