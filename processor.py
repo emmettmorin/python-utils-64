@@ -1,55 +1,56 @@
-import json
-import re
-from typing import Any, Dict, Union, Generator
+from typing import Generator, Dict, Any, Callable
 
-class RobloxAttributeTransformer:
-    """Dynamic descriptor for normalizing Roblox property casing and types."""
-    def __init__(self, key: str, default: Any = None):
-        self.key = key
-        self.default = default
+class RobloxValidationError(Exception):
+    """Raised when a batch payload item fails validation."""
+    pass
 
-    def __get__(self, instance, owner):
-        if instance is None:
-            return self
-        val = instance._raw_data.get(self.key, self.default)
-        if isinstance(val, str) and val.isdigit():
-            return int(val)
-        return val
+def _is_valid_id(val: Any) -> bool:
+    return isinstance(val, int) and val > 0
 
-class InstanceDataProcessor:
-    """Cleans and reorganizes raw Roblox web API or place hierarchy payloads."""
-    
-    asset_id = RobloxAttributeTransformer("TargetId", 0)
-    creator_id = RobloxAttributeTransformer("CreatorTargetId", 0)
-    name = RobloxAttributeTransformer("Name", "Untitled")
+def _is_valid_cookie(val: Any) -> bool:
+    return isinstance(val, str) and val.startswith("_|WARNING:-DO-NOT-SHARE-THIS")
 
-    def __init__(self, raw_payload: Union[str, Dict[str, Any]]):
-        if isinstance(raw_payload, str):
-            self._raw_data = json.loads(raw_payload)
-        else:
-            self._raw_data = raw_payload.copy()
+RULE_MATRIX: Dict[str, Callable[[Any], bool]] = {
+    "asset_id": _is_valid_id,
+    "place_id": _is_valid_id,
+    "universe_id": _is_valid_id,
+    "user_id": _is_valid_id,
+    "roblox_cookie": _is_valid_cookie,
+}
 
-    def sanitize_properties(self) -> Dict[str, Any]:
-        """Recursively strips Roblox internal XML/JSON tags and cleans string fields."""
-        def _clean(val: Any) -> Any:
-            if isinstance(val, str):
-                return re.sub(r'<[^>]+>', '', val).strip()
-            elif isinstance(val, dict):
-                return {k.lstrip('@'): _clean(v) for k, v in val.items() if not k.startswith('__')}
-            elif isinstance(val, list):
-                return [_clean(item) for item in val]
-            return val
+class RobloxBatchProcessor:
+    def __init__(self, raw_queue: list[Dict[str, Any]]):
+        self.queue = raw_queue
+        self.processed_count = 0
+        self.errors: list[Dict[str, Any]] = []
 
-        return _clean(self._raw_data)
-
-    def normalize_hierarchy(self) -> Generator[Dict[str, Any], None, None]:
-        """Flattens nested Roblox instance trees into streamable items."""
-        cleaned = self.sanitize_properties()
-        stack = [cleaned]
+    def _validate(self, payload: Dict[str, Any]) -> None:
+        if not isinstance(payload, dict) or "command" not in payload:
+            raise RobloxValidationError("Payload must be a dict with a 'command' key")
         
-        while stack:
-            current = stack.pop()
-            children = current.pop("Children", []) or current.pop("children", [])
-            yield current
-            if isinstance(children, list):
-                stack.extend(children)
+        evaluated = False
+        for field, rule in RULE_MATRIX.items():
+            if field in payload:
+                evaluated = True
+                if not rule(payload[field]):
+                    raise RobloxValidationError(f"Field '{field}' failed validation rule")
+        
+        if not evaluated:
+            raise RobloxValidationError("Payload contains no recognizable Roblox identifier fields")
+
+    def process_loop(self) -> Generator[Dict[str, Any], None, None]:
+        for idx, raw_item in enumerate(self.queue):
+            try:
+                self._validate(raw_item)
+                sanitized = dict(raw_item)
+                if "roblox_cookie" in sanitized:
+                    sanitized["roblox_cookie"] = "[REDACTED]"
+                sanitized["batch_index"] = idx
+                self.processed_count += 1
+                yield sanitized
+            except RobloxValidationError as err:
+                self.errors.append({"index": idx, "reason": str(err)})
+
+def run_roblox_pipeline(batch: list[Dict[str, Any]]) -> list[Dict[str, Any]]:
+    processor = RobloxBatchProcessor(batch)
+    return list(processor.process_loop())
