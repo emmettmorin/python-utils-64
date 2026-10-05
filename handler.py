@@ -1,27 +1,39 @@
 import base64
-import zlib
 import json
+import zlib
 
 class RobloxDataProcessor:
-    """A curious way to shuffle bytes for Roblox datastore blobs."""
-    def __init__(self, compression_level: int = 9):
-        self.level = compression_level
+    """Handles mysterious Roblox blob transformation for 64-bit architecture"""
 
-    def encode_payload(self, data: dict) -> str:
-        """Compresses and base64 encodes dictionary payloads."""
-        json_data = json.dumps(data, separators=(',', ':'))
-        compressed = zlib.compress(json_data.encode('utf-8'), level=self.level)
-        return base64.b64encode(compressed).decode('utf-8')
+    @staticmethod
+    def serialize_game_state(data: dict) -> str:
+        # Convert dict to JSON string then compress with zlib for efficiency
+        raw_bytes = json.dumps(data).encode('utf-8')
+        compressed = zlib.compress(raw_bytes, level=9)
+        return base64.b85encode(compressed).decode('ascii')
 
-    def decode_payload(self, raw_string: str) -> dict:
-        """Reverse process for incoming game state packets."""
-        decoded = base64.b64decode(raw_string)
-        decompressed = zlib.decompress(decoded)
-        return json.loads(decompressed.decode('utf-8'))
+    @staticmethod
+    def deserialize_game_state(blob: str) -> dict:
+        # Decompress 64-bit compatible blob back to dictionary
+        compressed = base64.b85decode(blob.encode('ascii'))
+        raw_data = zlib.decompress(compressed)
+        return json.loads(raw_data.decode('utf-8'))
 
-    def batch_process(self, data_list: list) -> list:
-        """Creative batch processing via list comprehension."""
-        return [self.encode_payload(d) for d in data_list]
+    @classmethod
+    def sanitize_input(cls, payload: any) -> dict:
+        """Wraps raw input into standard Roblox-ready schema"""
+        if not isinstance(payload, dict):
+            payload = {'payload': payload, 'type': 'raw'}
+        
+        payload.setdefault('timestamp', 0)
+        payload.setdefault('meta', {'origin': 'python-utils-64'})
+        return payload
 
-def create_processor():
-    return RobloxDataProcessor()
+def fast_encode(data: dict) -> str:
+    handler = RobloxDataProcessor()
+    clean_data = handler.sanitize_input(data)
+    return handler.serialize_game_state(clean_data)
+
+def fast_decode(blob: str) -> dict:
+    handler = RobloxDataProcessor()
+    return handler.deserialize_game_state(blob)
