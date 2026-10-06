@@ -1,36 +1,38 @@
 import logging
-import os
+import re
 from logging.handlers import RotatingFileHandler
 
-def get_roblox_logger(name='rbx_logger', log_file='rbx_ops.log', max_bytes=1048576, backup_count=3):
+COOKIE_PATTERN = re.compile(r"_\|WARNING:-DO-NOT-SHARE-[^\s\"']+")
+
+class RobloxSecurityFilter(logging.Filter):
+    """Filters Roblox cookie values from being leaked in logs."""
+    def filter(self, record: logging.LogRecord) -> bool:
+        if isinstance(record.msg, str):
+            record.msg = COOKIE_PATTERN.sub("[REDACTED_COOKIE]", record.msg)
+        return True
+
+class RobloxStudioFormatter(logging.Formatter):
+    """Color-coded console output matching Roblox Studio design schema."""
+    COLORS = {
+        logging.DEBUG: "\033[94m[DEBUG]\033[0m",
+        logging.INFO: "\033[92m[INFO]\033[0m",
+        logging.WARNING: "\033[93m[WARN]\033[0m",
+        logging.ERROR: "\033[91m[ERROR]\033[0m",
+        logging.CRITICAL: "\033[41m[CRIT]\033[0m"
+    }
+
+    def format(self, record: logging.LogRecord) -> str:
+        prefix = self.COLORS.get(record.levelno, "[LOG]")
+        fmt = f"{prefix} %(asctime)s - %(name)s - %(message)s"
+        formatter = logging.Formatter(fmt, datefmt="%Y-%m-%d %H:%M:%S")
+        return formatter.format(record)
+
+def get_logger(name: str, filename: str = "roblox_session.log") -> logging.Logger:
+    """Creates a logger with automatic log rotation and Roblox cookie filtering."""
     logger = logging.getLogger(name)
-    logger.setLevel(logging.DEBUG)
+    logger.setLevel(logging.INFO)
+    logger.propagate = False
     
     if not logger.handlers:
-        formatter = logging.Formatter(
-            '%(asctime)s | [%(levelname)s] | %(name)s | %(message)s',
-            datefmt='%Y-%m-%d %H:%M:%S'
-        )
-        
-        rotating_handler = RotatingFileHandler(
-            log_file, 
-            maxBytes=max_bytes, 
-            backupCount=backup_count
-        )
-        rotating_handler.setFormatter(formatter)
-        logger.addHandler(rotating_handler)
-        
-        console_handler = logging.StreamHandler()
-        console_handler.setFormatter(formatter)
-        logger.addHandler(console_handler)
-        
-    return logger
-
-def rotate_forcefully(logger):
-    for handler in logger.handlers:
-        if isinstance(handler, RotatingFileHandler):
-            handler.doRollover()
-            
-if __name__ == '__main__':
-    log = get_roblox_logger()
-    log.info('System initialized for Roblox automation tasks')
+        file_handler = RotatingFileHandler(filename, maxBytes=524288, backupCount=3, encoding="utf-8")
+        file_handler.setFormatter(logging.Formatter("%(asctime)s
