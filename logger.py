@@ -1,32 +1,32 @@
+import logging
+from logging.handlers import RotatingFileHandler
 import sys
-import datetime
-from typing import Any
+import os
 
-class RobloxLogger:
-    """Streamlined console logger for Roblox API interactions."""
-    def __init__(self, prefix: str = "[ROBLOX-64]") -> None:
-        self.prefix = prefix
-        self.stream = sys.stdout
+def setup_roblox_logger(name: str = "roblox_utility", log_path: str = "logs/runtime.log") -> logging.Logger:
+    os.makedirs(os.path.dirname(log_path), exist_ok=True)
+    logger = logging.getLogger(name)
+    logger.setLevel(logging.DEBUG)
+    
+    formatter = logging.Formatter(
+        "[%(asctime)s] | %(levelname)s | %(name)s | %(message)s", 
+        datefmt="%H:%M:%S"
+    )
 
-    def _format(self, level: str, msg: Any) -> str:
-        timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        return f"{timestamp} | {self.prefix} | {level.upper()} | {msg}"
+    console_handler = logging.StreamHandler(sys.stdout)
+    console_handler.setFormatter(formatter)
+    
+    file_handler = RotatingFileHandler(
+        log_path, 
+        maxBytes=1024 * 1024 * 5, 
+        backupCount=3
+    )
+    file_handler.setFormatter(formatter)
 
-    def log(self, level: str, message: Any) -> None:
-        formatted = self._format(level, message)
-        self.stream.write(formatted + "\n")
-        self.stream.flush()
+    if not logger.handlers:
+        logger.addHandler(console_handler)
+        logger.addHandler(file_handler)
+    
+    return logger
 
-    def info(self, msg: Any) -> None:
-        self.log("info", msg)
-
-    def error(self, msg: Any) -> None:
-        self.log("error", msg)
-
-    def warn(self, msg: Any) -> None:
-        self.log("warning", msg)
-
-    def __call__(self, msg: Any) -> None:
-        self.info(msg)
-
-logger = RobloxLogger()
+logger = setup_roblox_logger()
