@@ -1,29 +1,40 @@
-import time
 import functools
-import random
-from typing import Callable, Any
+import logging
 
-def retry_operation(max_attempts: int = 3, delay: float = 1.0, backoff: float = 2.0):
-    def decorator(func: Callable):
+logger = logging.getLogger('roblox-utils')
+
+class RobloxApiError(Exception):
+    pass
+
+def robust_request(retries=3):
+    def decorator(func):
         @functools.wraps(func)
-        def wrapper(*args: Any, **kwargs: Any) -> Any:
-            attempts = 0
-            current_delay = delay
-            while attempts < max_attempts:
+        def wrapper(*args, **kwargs):
+            last_err = None
+            for attempt in range(retries):
                 try:
                     return func(*args, **kwargs)
-                except Exception as e:
-                    attempts += 1
-                    if attempts >= max_attempts:
-                        raise e
-                    time.sleep(current_delay + random.uniform(0, 0.5))
-                    current_delay *= backoff
+                except (ConnectionError, TimeoutError) as e:
+                    last_err = e
+                    logger.warning(f'Attempt {attempt+1} failed: {e}')
+            raise RobloxApiError(f'Failed after {retries} retries: {last_err}')
         return wrapper
     return decorator
 
-def roblox_api_retry(func: Callable):
-    @functools.wraps(func)
-    @retry_operation(max_attempts=5, delay=0.5, backoff=1.5)
-    def managed_request(*args, **kwargs):
-        return func(*args, **kwargs)
-    return managed_request
+def sanitize_robux(value):
+    try:
+        cleaned = int(str(value).replace(',', '').strip())
+        return max(0, cleaned)
+    except (ValueError, TypeError):
+        return 0
+
+def validate_game_id(game_id):
+    if not isinstance(game_id, (int, str)):
+        return None
+    sid = str(game_id)
+    return int(sid) if sid.isdigit() else None
+
+if __name__ == '__main__':
+    # Example usage
+    val = sanitize_robux(' 1,000 ')
+    print(f'Sanitized: {val}')
