@@ -1,19 +1,18 @@
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
+
 # python-utils-64
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-
-`python-utils-64` is a high-performance Python library designed for Roblox developers to streamline external data encoding, asset management, and Luau-compatible serialization. It simplifies complex interactions with Roblox Open Cloud APIs and optimizes data payload handling for external databases and webhooks.
+A high-performance Python utility library designed specifically for Roblox developers to streamline backend data management, Luau-compatible serialization, and API interactions. It bridges the gap between external Python services and Roblox game servers by providing robust, type-safe wrappers for Roblox web APIs and asset pipelines.
 
 ## Features
 
-* **Luau Table Serializer**: Convert complex Python dictionaries and lists directly into optimized Luau table strings for seamless ingestion by Roblox servers.
-* **Open Cloud Wrapper**: Simplified interface for interacting with Roblox Datastores, MessagingService, and Place Publishing APIs.
-* **RBXM/RBXMX Parser**: Deconstruct and analyze binary and XML Roblox model files directly within Python environments.
-* **Security Validation**: Built-in validation utilities for checking `.ROBLOSECURITY` cookie expiration and API key permissions.
+* **Luau Data Serializer:** Convert complex Python dictionaries and objects directly into optimized, valid Luau table strings for seamless ingestion by game servers.
+* **RBXLX Parser:** Parse and modify XML-format Roblox place files (`.rbxlx`) programmatically, ideal for automated build systems and CI/CD pipelines.
+* **Universe API Wrapper:** Fast, asynchronous helper functions for updating developer products, managing datastores, and dispatching Open Cloud messaging.
 
 ## Installation
 
-Install the package via pip:
+Install the package directly from PyPI:
 
 ```bash
 pip install python-utils-64
@@ -21,33 +20,33 @@ pip install python-utils-64
 
 ## Quick Start
 
-Here is a quick example of how to validate a cookie and serialize game data for a Roblox Datastore using `python-utils-64`:
+The following example demonstrates how to serialize a Python dictionary into a Luau table and dispatch it to a Roblox server via the Open Cloud API.
 
 ```python
-from python_utils_64 import RobloxClient, LuauSerializer
+from python_utils_64 import LuauSerializer, OpenCloudClient
 
-# Initialize the client using Roblox Open Cloud
-client = RobloxClient(api_key="your_open_cloud_api_key")
-
-# Format Python data into a Luau-compatible table string
+# 1. Serialize Python data to Luau table format
 player_data = {
     "username": "Builderman",
-    "level": 75,
-    "inventory": ["Sword", "Shield", "Potion"]
+    "inventory": ["Sword", "Shield"],
+    "stats": {"Level": 50, "XP": 2450}
 }
-luau_string = LuauSerializer.to_table(player_data)
-print(luau_string)
-# Output: {username = "Builderman", level = 75, inventory = {"Sword", "Shield", "Potion"}}
+luau_table = LuauSerializer.to_table(player_data)
+print(luau_table) 
+# Output: {username = "Builderman", inventory = {"Sword", "Shield"}, stats = {Level = 50, XP = 2450}}
 
-# Publish data to a Roblox Datastore
-datastore = client.get_datastores(universe_id=123456789)
-datastore.set_entry(
-    datastore_name="PlayerData", 
-    key="User_2", 
-    value=player_data
+# 2. Dispatch data to game servers using Open Cloud
+client = OpenCloudClient(api_key="mpb_928374982374928374")
+client.publish_topic(
+    universe_id=123456789,
+    topic="PlayerDataUpdate",
+    data=luau_table
 )
 ```
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+This project is licensed under the MIT License - see the LICENSE file for details.
+
+---
+*Maintained by Developer.*
