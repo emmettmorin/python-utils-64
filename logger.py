@@ -1,34 +1,31 @@
 import logging
-from logging.handlers import RotatingFileHandler
 import sys
-import os
+from datetime import datetime
 
 class RobloxLogger:
-    def __init__(self, name='roblox_dev_bot', log_file='debug.log', level=logging.DEBUG):
+    def __init__(self, name: str = "roblox-util"):
         self.logger = logging.getLogger(name)
-        self.logger.setLevel(level)
-        
+        self._setup()
+
+    def _setup(self):
+        handler = logging.StreamHandler(sys.stdout)
         formatter = logging.Formatter(
-            '%(asctime)s | %(levelname)-8s | %(name)s | %(message)s',
-            datefmt='%H:%M:%S'
+            "[%(asctime)s | %(levelname)s | %(name)s] -> %(message)s",
+            datefmt="%H:%M:%S"
         )
+        handler.setFormatter(formatter)
+        self.logger.addHandler(handler)
+        self.logger.setLevel(logging.INFO)
 
-        console_handler = logging.StreamHandler(sys.stdout)
-        console_handler.setFormatter(formatter)
-        self.logger.addHandler(console_handler)
+    def log(self, level: str, msg: str):
+        getattr(self.logger, level.lower())(msg)
 
-        if log_file:
-            os.makedirs(os.path.dirname(log_file) or '.', exist_ok=True)
-            file_handler = RotatingFileHandler(
-                log_file, 
-                maxBytes=1024 * 1024 * 5, 
-                backupCount=3
-            )
-            file_handler.setFormatter(formatter)
-            self.logger.addHandler(file_handler)
+    def __getattr__(self, name):
+        return lambda msg: self.log(name, msg)
 
-    def get_logger(self):
-        return self.logger
+    def burst(self, messages: list):
+        for m in messages:
+            self.logger.info(f"[BULK] {m}")
 
-def setup_roblox_logging(name='core', path='logs/session.log'):
-    return RobloxLogger(name, path).get_logger()
+def get_logger(name: str = "roblox-core") -> RobloxLogger:
+    return RobloxLogger(name)
