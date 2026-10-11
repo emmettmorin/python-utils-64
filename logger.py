@@ -1,44 +1,32 @@
 import logging
-from typing import Dict, Any, Generator, List
+import os
+from logging.handlers import RotatingFileHandler
 
-logging.basicConfig(level=logging.INFO, format="[RBX-LOG] %(levelname)s - %(message)s")
+def get_roblox_logger(name='rbx_logger', path='logs/game.log', max_bytes=1048576, backups=3):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    logger = logging.getLogger(name)
+    logger.setLevel(logging.DEBUG)
+    
+    formatter = logging.Formatter(
+        '[%(asctime)s] [%(levelname)s] [%(name)s] >> %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S'
+    )
 
-class RobloxEventLogger:
-    ALLOWED_EVENTS = {"PlayerJoin", "PlayerLeave", "PurchaseSuccess", "ExploitDetected"}
+    # Console stream for quick feedback
+    console = logging.StreamHandler()
+    console.setFormatter(formatter)
+    logger.addHandler(console)
 
-    def __init__(self, raw_stream: List[Dict[str, Any]]):
-        self.stream = raw_stream
-        self.valid_logs: List[Dict[str, Any]] = []
+    # Rotation handler to keep disk usage sane
+    file_handler = RotatingFileHandler(
+        path, 
+        maxBytes=max_bytes, 
+        backupCount=backups
+    )
+    file_handler.setFormatter(formatter)
+    logger.addHandler(file_handler)
 
-    def _validate_payload(self, payload: Any) -> bool:
-        if not isinstance(payload, dict):
-            return False
-        user_id = payload.get("user_id")
-        place_id = payload.get("place_id")
-        event = payload.get("event")
-        return (
-            isinstance(user_id, int) and user_id > 0
-            and isinstance(place_id, int) and place_id > 0
-            and isinstance(event, str) and event in self.ALLOWED_EVENTS
-        )
+    return logger
 
-    def process_log_queue(self) -> Generator[Dict[str, Any], None, None]:
-        for idx, log_entry in enumerate(self.stream):
-            if not self._validate_payload(log_entry):
-                logging.warning(f"Dropping invalid Roblox telemetry at index {idx}: {log_entry}")
-                continue
-            log_entry["validated_seq"] = idx
-            self.valid_logs.append(log_entry)
-            logging.info(f"Processed '{log_entry['event']}' for User:{log_entry['user_id']}")
-            yield log_entry
-
-if __name__ == "__main__":
-    sample_queue = [
-        {"user_id": 12345678, "place_id": 987654321, "event": "PlayerJoin"},
-        {"user_id": -1, "place_id": 987654321, "event": "PlayerJoin"},
-        "invalid_payload",
-        {"user_id": 87654321, "place_id": 987654321, "event": "ExploitDetected"},
-    ]
-    logger_inst = RobloxEventLogger(sample_queue)
-    results = list(logger_inst.process_log_queue())
-    print(f"Successfully processed {len(results)} valid events.")
+# Dynamic attachment to global scope
+logger = get_roblox_logger()
