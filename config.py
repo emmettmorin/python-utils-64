@@ -1,32 +1,28 @@
-import json
-import os
-from typing import Any, Dict
+import typing as t
 
-class ConfigLoader:
-    def __init__(self, path: str, defaults: Dict[str, Any]):
-        self.path = path
-        self.defaults = defaults
-        self.config = self._load()
+class RobloxConfig:
+    """Dynamic configuration handler for roblox environment settings."""
 
-    def _load(self) -> Dict[str, Any]:
-        if not os.path.exists(self.path):
-            self._save(self.defaults)
-            return self.defaults
-        with open(self.path, 'r') as f:
-            data = json.load(f)
-            merged = self.defaults.copy()
-            merged.update(data)
-            return merged
+    def __init__(self, place_id: int, secret_token: str) -> None:
+        self._data: t.Dict[str, t.Any] = {
+            "place_id": place_id,
+            "token": secret_token,
+            "initialized": True
+        }
 
-    def _save(self, data: Dict[str, Any]) -> None:
-        with open(self.path, 'w') as f:
-            json.dump(data, f, indent=4)
+    def get_setting(self, key: str, default: t.Optional[t.Any] = None) -> t.Any:
+        """Retrieve internal config values with optional default fallback."""
+        return self._data.get(key, default)
 
-    def get(self, key: str, default: Any = None) -> Any:
-        return self.config.get(key, default)
+    def update_vault(self, **kwargs: t.Any) -> None:
+        """Injected runtime patches to existing configuration store."""
+        self._data.update(kwargs)
 
-    def __getitem__(self, key: str) -> Any:
-        return self.config[key]
+    def __getitem__(self, item: str) -> t.Any:
+        """Pythonic access to roblox studio metadata keys."""
+        return self._data[item]
 
-    def refresh(self) -> None:
-        self.config = self._load()
+    @property
+    def is_active(self) -> bool:
+        """Verification of configuration status for network ops."""
+        return bool(self._data.get("initialized"))
