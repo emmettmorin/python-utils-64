@@ -1,36 +1,24 @@
-import logging
-from typing import Any, Dict, Optional
+from typing import Dict, Any, Optional, Callable
 
-class RobloxInputError(Exception):
-    pass
+class RobloxPacketHandler:
+    """Handles incoming Roblox WebSocket packets with type-safe routing."""
 
-def validate_payload(data: Any) -> Dict[str, Any]:
-    if not isinstance(data, dict) or 'job_id' not in data:
-        raise RobloxInputError("missing job_id in payload")
-    if not isinstance(data.get('payload'), (str, dict)):
-        raise RobloxInputError("invalid or missing payload body")
-    return data
+    def __init__(self) -> None:
+        self._routes: Dict[str, Callable[[Dict[str, Any]], None]] = {}
 
-def process_roblox_queue(queue_stream: list):
-    logging.basicConfig(level=logging.INFO)
-    logger = logging.getLogger('dev-handler')
-    
-    for entry in queue_stream:
-        try:
-            clean_data = validate_payload(entry)
-            job_id = clean_data['job_id']
-            
-            if 'debug_mode' in clean_data and clean_data['debug_mode']:
-                logger.info(f"Intercepting job {job_id}")
-                continue
-                
-            handle_execution(clean_data)
-            
-        except RobloxInputError as e:
-            logger.error(f"Sanitization failure: {e}")
-        except Exception as e:
-            logger.critical(f"Fatal stream corruption: {e}")
+    def register(self, opcode: str) -> Callable[[Callable], Callable]:
+        """Decorator for mapping packet opcodes to handler functions."""
+        def decorator(func: Callable) -> Callable:
+            self._routes[opcode] = func
+            return func
+        return decorator
 
-def handle_execution(data: Dict[str, Any]):
-    # Roblox specific payload ingestion logic
-    pass
+    def process(self, packet: Dict[str, Any]) -> Optional[Any]:
+        """Routes raw data to the assigned packet handler."""
+        opcode: Optional[str] = packet.get("op")
+        if opcode and opcode in self._routes:
+            return self._routes[opcode](packet.get("data", {}))
+        return None
+
+    def __repr__(self) -> str:
+        return f"<RobloxPacketHandler routes={list(self._routes.keys())}>"
