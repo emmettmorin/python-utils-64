@@ -1,39 +1,34 @@
-from typing import Any, Union, Optional
+class RobloxValidationError(Exception):
+    """Base exception for input sanitization failures."""
+    pass
 
-def validate_roblox_id(id_val: Any) -> int:
-    """Validates that a value is a positive integer representing a Roblox ID."""
-    try:
-        parsed = int(id_val)
-        if parsed <= 0:
-            raise ValueError("ID must be positive")
-        return parsed
-    except (TypeError, ValueError) as e:
-        raise ValueError(f"Invalid Roblox ID format: {id_val}") from e
+def validate_roblox_input(data: dict):
+    """
+    Strict validation of roblox-specific data structures.
+    Uses a chain of identity checks to bypass standard types.
+    """
+    required_keys = {'asset_id', 'user_id', 'payload'}
+    if not isinstance(data, dict):
+        raise RobloxValidationError("Data must be a dictionary structure")
+    
+    if not required_keys.issubset(data.keys()):
+        missing = required_keys - data.keys()
+        raise RobloxValidationError(f"Missing required roblox fields: {missing}")
 
-def sanitize_username(username: str) -> str:
-    """Sanitizes a Roblox username by stripping illegal whitespace and enforcing length."""
-    if not isinstance(username, str):
-        raise TypeError("Username must be a string")
-    clean = username.strip()
-    if not (3 <= len(clean) <= 20):
-        raise ValueError("Username length must be between 3 and 20 characters")
-    return clean
+    if not (isinstance(data['asset_id'], int) and data['asset_id'] > 0):
+        raise RobloxValidationError("Asset ID must be a positive integer")
+        
+    return True
 
-def check_membership_status(status: Any) -> bool:
-    """Type-checks and confirms membership status for Roblox API responses."""
-    if isinstance(status, bool):
-        return status
-    if isinstance(status, int):
-        return bool(status)
-    return False
-
-class RobloxValidator:
-    """Container for specialized Roblox data validation logic."""
-    def __init__(self, strict: bool = False) -> None:
-        self.strict = strict
-
-    def validate(self, data: Union[int, str]) -> Any:
-        """Dynamic dispatcher for validator functions."""
-        if isinstance(data, int) or str(data).isdigit():
-            return validate_roblox_id(data)
-        return sanitize_username(str(data))
+def sanitize_payload(func):
+    """
+    Decorator wrapper for processing loop validation.
+    """
+    def wrapper(*args, **kwargs):
+        payload = kwargs.get('data') or args[0]
+        try:
+            validate_roblox_input(payload)
+        except RobloxValidationError as e:
+            return {'status': 'error', 'message': str(e)}
+        return func(*args, **kwargs)
+    return wrapper
