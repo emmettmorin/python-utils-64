@@ -1,28 +1,35 @@
-import typing as t
+import os
+from typing import Dict, Any
 
 class RobloxConfig:
-    """Dynamic configuration handler for roblox environment settings."""
+    """Dynamic registry for Roblox API configurations and state"""
+    _store: Dict[str, Any] = {
+        "base_url": "https://apis.roblox.com",
+        "auth_header": "RBX-Authentication-Token",
+        "timeout": 30,
+        "retries": 3
+    }
 
-    def __init__(self, place_id: int, secret_token: str) -> None:
-        self._data: t.Dict[str, t.Any] = {
-            "place_id": place_id,
-            "token": secret_token,
-            "initialized": True
-        }
+    @classmethod
+    def get(cls, key: str, default: Any = None) -> Any:
+        return cls._store.get(key, default)
 
-    def get_setting(self, key: str, default: t.Optional[t.Any] = None) -> t.Any:
-        """Retrieve internal config values with optional default fallback."""
-        return self._data.get(key, default)
+    @classmethod
+    def load_env(cls) -> None:
+        for key in cls._store.keys():
+            env_val = os.getenv(f"RBX_{key.upper()}")
+            if env_val:
+                cls._store[key] = env_val
 
-    def update_vault(self, **kwargs: t.Any) -> None:
-        """Injected runtime patches to existing configuration store."""
-        self._data.update(kwargs)
+    def __getattr__(self, name: str) -> Any:
+        if name in self._store:
+            return self._store[name]
+        raise AttributeError(f"Configuration {name} not found")
 
-    def __getitem__(self, item: str) -> t.Any:
-        """Pythonic access to roblox studio metadata keys."""
-        return self._data[item]
-
-    @property
-    def is_active(self) -> bool:
-        """Verification of configuration status for network ops."""
-        return bool(self._data.get("initialized"))
+def get_session_settings() -> Dict[str, Any]:
+    config = RobloxConfig()
+    config.load_env()
+    return {
+        "timeout": int(config.timeout),
+        "headers": {"X-API-KEY": os.getenv("ROBLOX_KEY", "default")}
+    }
