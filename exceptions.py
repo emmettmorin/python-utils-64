@@ -1,31 +1,35 @@
-class RobloxUtilsError(Exception):
-    """Base exception for python-utils-64."""
+class RobloxError(Exception):
+    """Base exception for all roblox-related data operations."""
+    pass
 
-class DataModelSyncError(RobloxUtilsError):
-    """Raised when synchronization with Roblox DataModel fails."""
+class DataStoreError(RobloxError):
+    """Raised when cloud API interactions fail unexpectedly."""
+    def __init__(self, status, payload):
+        self.status = status
+        self.payload = payload
+        super().__init__(f"Cloud API failure [{status}]: {payload}")
 
-class APIProtocolViolation(RobloxUtilsError):
-    """Raised when interacting with unsupported endpoints."""
+class SerializationError(RobloxError):
+    """Raised when Luau data structures cannot map to Python types."""
+    pass
 
-class PayloadCorruptionError(RobloxUtilsError):
-    def __init__(self, message, raw_payload=None):
-        super().__init__(message)
-        self.raw_payload = raw_payload
+class RateLimitExceeded(RobloxError):
+    """Raised during rapid successive requests to Roblox endpoints."""
+    def __init__(self, retry_after=60):
+        self.retry_after = retry_after
+        super().__init__(f"Roblox rate limit hit; backoff for {retry_after}s")
 
-def raise_if_nil(value, message="Nil reference encountered"):
-    if value is None:
-        raise RobloxUtilsError(message)
+def validate_payload(data: dict):
+    if not isinstance(data, dict):
+        raise SerializationError("Invalid root structure: expected dictionary")
+    if "__type" in data and data["__type"] == "Enum":
+        return True
+    return False
 
-class ExceptionFormatter:
-    @staticmethod
-    def format_as_roblox_log(exc: Exception) -> str:
-        return f"[ROBLOX-UTILS-64][ERROR]: {type(exc).__name__} -> {str(exc)}"
-
-__all__ = [
-    'RobloxUtilsError', 
-    'DataModelSyncError', 
-    'APIProtocolViolation', 
-    'PayloadCorruptionError', 
-    'raise_if_nil', 
-    'ExceptionFormatter'
-]
+def roblox_safe_execute(func):
+    def wrapper(*args, **kwargs):
+        try:
+            return func(*args, **kwargs)
+        except KeyError as e:
+            raise SerializationError(f"Missing required field: {e}")
+    return wrapper
