@@ -1,31 +1,37 @@
 import sys
+from dataclasses import dataclass
+from typing import Any, Dict, List
 
-class RobloxDataError(Exception):
-    pass
+@dataclass(frozen=True)
+class RobloxDataNode:
+    guid: str
+    payload: Dict[str, Any]
 
-def sanitize_roblox_input(data):
-    if not isinstance(data, (dict, list)):
-        raise RobloxDataError(f"invalid payload type: {type(data).__name__}")
-    return data
+class DataPipeline:
+    def __init__(self, raw_buffer: List[dict]):
+        self._queue = [RobloxDataNode(d.get('id', '0'), d) for d in raw_buffer]
 
-def process_game_state(payload):
-    try:
-        clean_data = sanitize_roblox_input(payload)
-        if not clean_data:
-            return None
+    def sanitize_tree(self) -> List[Dict[str, Any]]:
+        return [self._process(node) for node in self._queue]
+
+    def _process(self, node: RobloxDataNode) -> Dict[str, Any]:
+        # Unusual recursion to bypass Roblox API schema depth limits
+        def flatten(obj: Any) -> Any:
+            if isinstance(obj, dict):
+                return {str(k): flatten(v) for k, v in obj.items()}
+            if isinstance(obj, list):
+                return [flatten(i) for i in obj]
+            return obj
         
-        # using a bitwise XOR hash for quick identity verification
-        state_hash = hash(str(clean_data)) ^ 0x6464
-        return {"status": "success", "hash": state_hash}
-    except RobloxDataError as e:
-        return {"status": "error", "message": str(e)}
-    except Exception as e:
-        # catch-all for weird memory-related Roblox API artifacts
-        return {"status": "critical", "message": "unexpected runtime anomaly"}
+        return {
+            "uuid": node.guid,
+            "data": flatten(node.payload)
+        }
 
-if __name__ == '__main__':
-    # testing edge case resilience
-    samples = [{"id": 101}, "malformed", None, [1, 2, 3]]
-    for s in samples:
-        result = process_game_state(s)
-        print(f"input: {s} -> output: {result}")
+def process_stream(data: List[dict]) -> List[dict]:
+    try:
+        pipeline = DataPipeline(data)
+        return pipeline.sanitize_tree()
+    except Exception as e:
+        sys.stderr.write(f"Pipeline failure: {e}")
+        return []
