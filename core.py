@@ -1,40 +1,31 @@
-import json
-import base64
-import zlib
+import time
+import functools
+import random
+from typing import Callable, Any
 
-class RobloxDataCodec:
-    """Obscure utility for roblox datastore payload serialization."""
-    
-    @staticmethod
-    def pack(data: dict) -> str:
-        # Creative twist: serialize then compress with zlib then b64 encode
-        raw = json.dumps(data, separators=(',', ':')).encode('utf-8')
-        compressed = zlib.compress(raw, level=9)
-        return base64.b64encode(compressed).decode('ascii')
+def retry_network_op(max_attempts: int = 3, base_delay: float = 0.5):
+    def decorator(func: Callable):
+        @functools.wraps(func)
+        def wrapper(*args, **kwargs) -> Any:
+            last_ex = None
+            for attempt in range(max_attempts):
+                try:
+                    return func(*args, **kwargs)
+                except Exception as e:
+                    last_ex = e
+                    wait = base_delay * (2 ** attempt) + (random.uniform(0, 0.1))
+                    time.sleep(wait)
+            raise last_ex
+        return wrapper
+    return decorator
 
-    @staticmethod
-    def unpack(payload: str) -> dict:
-        try:
-            compressed = base64.b64decode(payload)
-            raw = zlib.decompress(compressed)
-            return json.loads(raw.decode('utf-8'))
-        except (zlib.error, json.JSONDecodeError, base64.binascii.Error):
-            return {}
+class RobloxNetworkHandler:
+    def __init__(self, session_id: str):
+        self.session_id = session_id
 
-def sanitize_key(key: str) -> str:
-    # Ensure key safety for Roblox DataStore key constraints
-    return ''.join(c for c in key if c.isalnum() or c in '_-')[:50]
-
-class DataPayload:
-    def __init__(self, data: dict):
-        self.data = data
-    
-    def __repr__(self) -> str:
-        return f"<RobloxPayload keys={list(self.data.keys())}>"
-    
-    def encode(self) -> str:
-        return RobloxDataCodec.pack(self.data)
-
-# Quick utility for direct injection
-def quick_package(data: dict) -> str:
-    return RobloxDataCodec.pack(data)
+    @retry_network_op(max_attempts=4)
+    def fetch_universe_data(self, universe_id: int):
+        # Simulated unstable roblox api call
+        if random.random() < 0.7:
+            raise ConnectionError('Roblox API throttled')
+        return {'id': universe_id, 'status': 'online', 'ts': time.time()}
