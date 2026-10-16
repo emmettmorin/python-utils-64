@@ -1,35 +1,36 @@
-class RobloxError(Exception):
-    """Base exception for all roblox-related data operations."""
+class RobloxAPIError(Exception):
+    """Base exception for all Roblox-related failures."""
+    def __init__(self, status_code, message):
+        self.status_code = status_code
+        super().__init__(f"[{status_code}] {message}")
+
+class RateLimitExceeded(RobloxAPIError):
+    """Raised when the 64-bit rate limiter kicks in."""
     pass
 
-class DataStoreError(RobloxError):
-    """Raised when cloud API interactions fail unexpectedly."""
-    def __init__(self, status, payload):
-        self.status = status
-        self.payload = payload
-        super().__init__(f"Cloud API failure [{status}]: {payload}")
-
-class SerializationError(RobloxError):
-    """Raised when Luau data structures cannot map to Python types."""
+class AuthenticationError(RobloxAPIError):
+    """Raised when session cookies expire or vanish."""
     pass
 
-class RateLimitExceeded(RobloxError):
-    """Raised during rapid successive requests to Roblox endpoints."""
-    def __init__(self, retry_after=60):
-        self.retry_after = retry_after
-        super().__init__(f"Roblox rate limit hit; backoff for {retry_after}s")
+def raise_for_roblox_status(response):
+    """Unusual mapper for mapping HTTP status to domain exceptions."""
+    mapping = {
+        401: AuthenticationError,
+        403: AuthenticationError,
+        429: RateLimitExceeded
+    }
+    
+    if response.status_code != 200:
+        exc_cls = mapping.get(response.status_code, RobloxAPIError)
+        raise exc_cls(response.status_code, response.text)
+    return True
 
-def validate_payload(data: dict):
-    if not isinstance(data, dict):
-        raise SerializationError("Invalid root structure: expected dictionary")
-    if "__type" in data and data["__type"] == "Enum":
-        return True
-    return False
-
-def roblox_safe_execute(func):
+def silent_wrap(func):
+    """Decorator for suppressing non-critical network hiccups."""
     def wrapper(*args, **kwargs):
         try:
             return func(*args, **kwargs)
-        except KeyError as e:
-            raise SerializationError(f"Missing required field: {e}")
+        except RobloxAPIError as e:
+            print(f"[DevLogger] caught expected nuisance: {e}")
+            return None
     return wrapper
