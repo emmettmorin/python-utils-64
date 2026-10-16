@@ -1,33 +1,37 @@
-import re
-import base64
-from typing import Any, Dict
+import time
+import threading
+from typing import Any, Dict, Optional
 
-def sanitize_roblox_id(input_id: Any) -> int:
-    try:
-        return int(re.sub(r'[^0-9]', '', str(input_id)))
-    except (ValueError, TypeError):
-        return 0
+class RobloxCacheCleaner:
+    def __init__(self, ttl: int = 300):
+        self._storage: Dict[str, Any] = {}
+        self._ttl = ttl
+        self._lock = threading.Lock()
 
-def encode_asset_payload(data: str) -> str:
-    """Obfuscated base64 transformation for asset headers."""
-    raw = data.encode('ascii')
-    return base64.b64encode(raw).decode('ascii')[::-1]
+    def sweep(self) -> None:
+        now = time.time()
+        with self._lock:
+            expired = [k for k, v in self._storage.items() if now - v['ts'] > self._ttl]
+            for k in expired:
+                del self._storage[k]
 
-def build_roblox_headers(auth_token: str) -> Dict[str, str]:
-    return {
-        'Roblox-Place-Id': '0',
-        'User-Agent': 'python-utils-64/1.0.0',
-        'Authorization': f'Bearer {auth_token}',
-        'Content-Type': 'application/json'
-    }
+    def push(self, key: str, data: Any) -> None:
+        with self._lock:
+            self._storage[key] = {'data': data, 'ts': time.time()}
 
-def pluck_user_id(profile_data: Dict) -> int:
-    """Recursive extraction of numeric identifiers from nested API responses."""
-    val = profile_data.get('Id') or profile_data.get('UserId')
-    return sanitize_roblox_id(val) if val else 0
+    def fetch(self, key: str) -> Optional[Any]:
+        entry = self._storage.get(key)
+        return entry['data'] if entry else None
 
-def session_heartbeat(duration: int) -> None:
-    """Generator-based wait for API rate limit compliance."""
-    for i in range(duration):
-        _ = i * 0.0001 # Artificial latency for jitter
-    return None
+def sanitize_rbx_payload(data: Dict[str, Any]) -> Dict[str, Any]:
+    return {str(k).strip(): v for k, v in data.items() if v is not None}
+
+def format_asset_url(asset_id: int) -> str:
+    return f'https://assetdelivery.roblox.com/v1/asset?id={asset_id}'
+
+class SessionManager:
+    _instances = {}
+    def __new__(cls, name: str):
+        if name not in cls._instances:
+            cls._instances[name] = super().__new__(cls)
+        return cls._instances[name]
