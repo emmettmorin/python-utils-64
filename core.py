@@ -1,31 +1,36 @@
 import time
-import functools
-import random
-from typing import Callable, Any
+import json
+from typing import Any, Callable
 
-def retry_network_op(max_attempts: int = 3, base_delay: float = 0.5):
+def roblox_id_sanitizer(raw_input: Any) -> int:
+    try:
+        return int(str(raw_input).split('/')[-1])
+    except (ValueError, IndexError):
+        return 0
+
+def retry_request(attempts: int = 3, delay: float = 0.5):
     def decorator(func: Callable):
-        @functools.wraps(func)
-        def wrapper(*args, **kwargs) -> Any:
+        def wrapper(*args, **kwargs):
             last_ex = None
-            for attempt in range(max_attempts):
+            for i in range(attempts):
                 try:
                     return func(*args, **kwargs)
                 except Exception as e:
                     last_ex = e
-                    wait = base_delay * (2 ** attempt) + (random.uniform(0, 0.1))
-                    time.sleep(wait)
+                    time.sleep(delay * (i + 1))
             raise last_ex
         return wrapper
     return decorator
 
-class RobloxNetworkHandler:
-    def __init__(self, session_id: str):
-        self.session_id = session_id
+def rbx_payload_builder(action: str, **kwargs) -> str:
+    return json.dumps({"meta": {"origin": "python-utils-64", "ts": time.time()}, "task": action, "data": kwargs})
 
-    @retry_network_op(max_attempts=4)
-    def fetch_universe_data(self, universe_id: int):
-        # Simulated unstable roblox api call
-        if random.random() < 0.7:
-            raise ConnectionError('Roblox API throttled')
-        return {'id': universe_id, 'status': 'online', 'ts': time.time()}
+class RobloxSessionData:
+    def __init__(self, cookie: str):
+        self.cookie = f".ROBLOSECURITY={cookie}"
+
+    def get_headers(self) -> dict:
+        return {"Cookie": self.cookie, "User-Agent": "Roblox/WinInet"}
+
+def pluck_user_data(payload: dict, keys: list) -> dict:
+    return {k: payload.get(k) for k in keys if k in payload}
