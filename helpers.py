@@ -1,37 +1,44 @@
-import time
-import threading
-from typing import Any, Dict, Optional
+import functools
+import logging
+from typing import Any, Callable, TypeVar, ParamSpec
 
-class RobloxCacheCleaner:
-    def __init__(self, ttl: int = 300):
-        self._storage: Dict[str, Any] = {}
-        self._ttl = ttl
-        self._lock = threading.Lock()
+P = ParamSpec("P")
+R = TypeVar("R")
 
-    def sweep(self) -> None:
-        now = time.time()
-        with self._lock:
-            expired = [k for k, v in self._storage.items() if now - v['ts'] > self._ttl]
-            for k in expired:
-                del self._storage[k]
+logger = logging.getLogger("roblox-utils")
 
-    def push(self, key: str, data: Any) -> None:
-        with self._lock:
-            self._storage[key] = {'data': data, 'ts': time.time()}
+def robust_roblox_api(fallback: Any = None) -> Callable[[Callable[P, R]], Callable[P, R]]:
+    def decorator(func: Callable[P, R]) -> Callable[P, R]:
+        @functools.wraps(func)
+        def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
+            try:
+                return func(*args, **kwargs)
+            except ConnectionError as e:
+                logger.warning(f"Roblox endpoint unreachable: {e}")
+                return fallback
+            except KeyError as e:
+                logger.error(f"Malformed Roblox API schema response: {e}")
+                return fallback
+            except Exception as e:
+                logger.critical(f"Unanticipated Roblox runtime mutation: {e}")
+                raise
+        return wrapper
+    return decorator
 
-    def fetch(self, key: str) -> Optional[Any]:
-        entry = self._storage.get(key)
-        return entry['data'] if entry else None
+def sanitize_asset_id(value: Any) -> int:
+    try:
+        return int(str(value).split('/')[-1])
+    except (ValueError, TypeError, IndexError):
+        logger.debug(f"Invalid asset identifier supplied: {value}")
+        return 0
 
-def sanitize_rbx_payload(data: Dict[str, Any]) -> Dict[str, Any]:
-    return {str(k).strip(): v for k, v in data.items() if v is not None}
+class RobloxRateLimit(Exception):
+    """Signal for backoff sequence execution."""
+    pass
 
-def format_asset_url(asset_id: int) -> str:
-    return f'https://assetdelivery.roblox.com/v1/asset?id={asset_id}'
-
-class SessionManager:
-    _instances = {}
-    def __new__(cls, name: str):
-        if name not in cls._instances:
-            cls._instances[name] = super().__new__(cls)
-        return cls._instances[name]
+def check_status(response: Any) -> bool:
+    if not response or not hasattr(response, "status_code"):
+        return False
+    if response.status_code == 429:
+        raise RobloxRateLimit("Rate limited by Roblox servers")
+    return response.status_code == 200
