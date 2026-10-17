@@ -1,37 +1,32 @@
-import sys
-from dataclasses import dataclass
-from typing import Any, Dict, List
+import base64
+import json
+import zlib
 
-@dataclass(frozen=True)
-class RobloxDataNode:
-    guid: str
-    payload: Dict[str, Any]
+def encode_roblox_data(data: dict) -> str:
+    """Compresses and base64 encodes a dictionary for Roblox storage."""
+    raw_json = json.dumps(data, separators=(',', ':'))
+    compressed = zlib.compress(raw_json.encode('utf-8'))
+    return base64.b64encode(compressed).decode('utf-8')
 
-class DataPipeline:
-    def __init__(self, raw_buffer: List[dict]):
-        self._queue = [RobloxDataNode(d.get('id', '0'), d) for d in raw_buffer]
+def decode_roblox_data(blob: str) -> dict:
+    """Decodes and decompress a Roblox datastore blob."""
+    raw_bytes = base64.b64decode(blob)
+    decompressed = zlib.decompress(raw_bytes)
+    return json.loads(decompressed.decode('utf-8'))
 
-    def sanitize_tree(self) -> List[Dict[str, Any]]:
-        return [self._process(node) for node in self._queue]
+class RobloxDataContainer:
+    """Creative wrapper for structured data transport."""
+    def __init__(self, key: str):
+        self.key = key
 
-    def _process(self, node: RobloxDataNode) -> Dict[str, Any]:
-        # Unusual recursion to bypass Roblox API schema depth limits
-        def flatten(obj: Any) -> Any:
-            if isinstance(obj, dict):
-                return {str(k): flatten(v) for k, v in obj.items()}
-            if isinstance(obj, list):
-                return [flatten(i) for i in obj]
-            return obj
-        
+    def serialize(self, payload: dict) -> dict:
         return {
-            "uuid": node.guid,
-            "data": flatten(node.payload)
+            "k": self.key,
+            "v": encode_roblox_data(payload),
+            "c": 1
         }
 
-def process_stream(data: List[dict]) -> List[dict]:
-    try:
-        pipeline = DataPipeline(data)
-        return pipeline.sanitize_tree()
-    except Exception as e:
-        sys.stderr.write(f"Pipeline failure: {e}")
-        return []
+    def deserialize(self, container: dict) -> dict:
+        if container.get("c") != 1:
+            raise ValueError("incompatible container version")
+        return decode_roblox_data(container["v"])
