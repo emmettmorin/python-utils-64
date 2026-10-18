@@ -1,34 +1,35 @@
-class RobloxValidationError(Exception):
-    """Base exception for input sanitization failures."""
-    pass
+import typing
 
-def validate_roblox_input(data: dict):
-    """
-    Strict validation of roblox-specific data structures.
-    Uses a chain of identity checks to bypass standard types.
-    """
-    required_keys = {'asset_id', 'user_id', 'payload'}
+def validate_payload(data: typing.Any) -> bool:
+    """Ensures roblox data structure conforms to protocol expectations."""
     if not isinstance(data, dict):
-        raise RobloxValidationError("Data must be a dictionary structure")
+        return False
     
-    if not required_keys.issubset(data.keys()):
-        missing = required_keys - data.keys()
-        raise RobloxValidationError(f"Missing required roblox fields: {missing}")
+    required_fields = {'place_id', 'user_id', 'payload'}
+    if not required_fields.issubset(data.keys()):
+        return False
+    
+    # Roblox-specific sanity checks: IDs should be non-negative
+    if data['place_id'] < 0 or data['user_id'] < 0:
+        return False
 
-    if not (isinstance(data['asset_id'], int) and data['asset_id'] > 0):
-        raise RobloxValidationError("Asset ID must be a positive integer")
-        
     return True
 
-def sanitize_payload(func):
-    """
-    Decorator wrapper for processing loop validation.
-    """
-    def wrapper(*args, **kwargs):
-        payload = kwargs.get('data') or args[0]
-        try:
-            validate_roblox_input(payload)
-        except RobloxValidationError as e:
-            return {'status': 'error', 'message': str(e)}
-        return func(*args, **kwargs)
-    return wrapper
+def sanitize_input(data: dict) -> dict:
+    """Forces type safety on incoming network frames."""
+    return {
+        'place_id': int(data.get('place_id', 0)),
+        'user_id': int(data.get('user_id', 0)),
+        'payload': str(data.get('payload', '')),
+        'timestamp': float(data.get('timestamp', 0.0))
+    }
+
+class ValidationError(Exception):
+    """Custom error for invalid processing frames."""
+    pass
+
+def enforce_frame_schema(frame: typing.Any):
+    """Decorator logic for pipeline integrity."""
+    if not validate_payload(frame):
+        raise ValidationError(f"Malformed payload received: {type(frame)}")
+    return sanitize_input(frame)
