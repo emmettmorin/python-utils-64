@@ -1,32 +1,31 @@
-import base64
-import json
-import zlib
+import time
+import functools
+import random
+from typing import Callable, Any
 
-def encode_roblox_data(data: dict) -> str:
-    """Compresses and base64 encodes a dictionary for Roblox storage."""
-    raw_json = json.dumps(data, separators=(',', ':'))
-    compressed = zlib.compress(raw_json.encode('utf-8'))
-    return base64.b64encode(compressed).decode('utf-8')
+def retry_roblox_api(retries: int = 3, backoff: float = 1.0):
+    def decorator(func: Callable):
+        @functools.wraps(func)
+        def wrapper(*args, **kwargs):
+            last_ex = None
+            for attempt in range(retries):
+                try:
+                    return func(*args, **kwargs)
+                except Exception as e:
+                    last_ex = e
+                    sleep_time = backoff * (2 ** attempt) + (random.randint(0, 1000) / 1000)
+                    time.sleep(sleep_time)
+            raise last_ex
+        return wrapper
+    return decorator
 
-def decode_roblox_data(blob: str) -> dict:
-    """Decodes and decompress a Roblox datastore blob."""
-    raw_bytes = base64.b64decode(blob)
-    decompressed = zlib.decompress(raw_bytes)
-    return json.loads(decompressed.decode('utf-8'))
+class RobloxNetworkProcessor:
+    def __init__(self, session_id: str):
+        self.session_id = session_id
 
-class RobloxDataContainer:
-    """Creative wrapper for structured data transport."""
-    def __init__(self, key: str):
-        self.key = key
-
-    def serialize(self, payload: dict) -> dict:
-        return {
-            "k": self.key,
-            "v": encode_roblox_data(payload),
-            "c": 1
-        }
-
-    def deserialize(self, container: dict) -> dict:
-        if container.get("c") != 1:
-            raise ValueError("incompatible container version")
-        return decode_roblox_data(container["v"])
+    @retry_roblox_api(retries=5, backoff=0.5)
+    def fetch_universe_data(self, universe_id: int):
+        # Simulated unstable network request logic
+        if random.random() < 0.7:
+            raise ConnectionError("Roblox API throttling detected")
+        return {"id": universe_id, "status": "online", "sid": self.session_id}
