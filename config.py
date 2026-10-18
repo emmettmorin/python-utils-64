@@ -1,43 +1,71 @@
-import json
 import os
-from typing import Any, Dict
+import json
+from collections import ChainMap
+from typing import Any, Dict, Optional
 
-class ConfigLoader:
-    def __init__(self, path: str, defaults: Dict[str, Any]):
-        self.path = path
-        self.data = defaults
-        self._sync()
+DEFAULT_ROBLOX_CONFIG: Dict[str, Any] = {
+    "cookie": None,
+    "api_key": None,
+    "universe_id": 0,
+    "place_id": 0,
+    "timeout": 15.0,
+    "max_retries": 3,
+    "user_agent": "RobloxUtils64/1.0",
+    "open_cloud_base_url": "https://apis.roblox.com/",
+}
 
-    def _sync(self) -> None:
-        if not os.path.exists(self.path):
-            self._save()
-            return
-        with open(self.path, 'r') as f:
-            try:
-                stored = json.load(f)
-                self.data.update({k: v for k, v in stored.items() if k in self.data})
-            except json.JSONDecodeError:
-                self._save()
+class RobloxConfig:
+    """Dynamic configuration loader mapping environment variables and custom overrides."""
+    
+    def __init__(self, config_path: Optional[str] = None, **overrides: Any) -> None:
+        self._file_defaults = self._load_file(config_path) if config_path else {}
+        self._env_defaults = self._load_env()
+        self._overrides = {k: v for k, v in overrides.items() if v is not None}
+        
+        # Priority: Overrides > File > Environment > Base Defaults
+        self._chain = ChainMap(
+            self._overrides,
+            self._file_defaults,
+            self._env_defaults,
+            DEFAULT_ROBLOX_CONFIG
+        )
 
-    def _save(self) -> None:
-        with open(self.path, 'w') as f:
-            json.dump(self.data, f, indent=4)
+    def _load_env(self) -> Dict[str, Any]:
+        env_map = {}
+        mapping = {
+            "ROBLOX_COOKIE": "cookie",
+            "ROBLOX_API_KEY": "api_key",
+            "ROBLOX_UNIVERSE_ID": ("universe_id", int),
+            "ROBLOX_PLACE_ID": ("place_id", int),
+            "ROBLOX_TIMEOUT": ("timeout", float),
+        }
+        for env_key, spec in mapping.items():
+            val = os.getenv(env_key)
+            if val is not None:
+                if isinstance(spec, tuple):
+                    key, cast = spec
+                    try:
+                        env_map[key] = cast(val)
+                    except ValueError:
+                        pass
+                else:
+                    env_map[spec] = val
+        return env_map
 
-    def get(self, key: str, default: Any = None) -> Any:
-        return self.data.get(key, default)
+    @staticmethod
+    def _load_file(path: str) -> Dict[str, Any]:
+        if os.path.exists(path):
+            with open(path, "r", encoding="utf-8") as f:
+                return json.load(f)
+        return {}
 
-    def __getitem__(self, key: str) -> Any:
-        return self.data[key]
+    def __getattr__(self, name: str) -> Any:
+        if name in self._chain:
+            return self._chain[name]
+        raise AttributeError(f"'RobloxConfig' object has no attribute '{name}'")
 
-    def __setitem__(self, key: str, value: Any) -> None:
-        self.data[key] = value
-        self._save()
+    def __getitem__(self, item: str) -> Any:
+        return self._chain[item]
 
-def load_roblox_config(filename: str = "config.json") -> ConfigLoader:
-    defaults = {
-        "place_id": 0,
-        "auth_token": "",
-        "debug_mode": False,
-        "rate_limit": 0.5
-    }
-    return ConfigLoader(filename, defaults)
+    def as_dict(self) -> Dict[str, Any]:
+        return dict(self._chain)
