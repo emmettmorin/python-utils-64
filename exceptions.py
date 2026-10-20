@@ -1,36 +1,30 @@
 class RobloxAPIError(Exception):
-    """Base exception for all Roblox-related failures."""
-    def __init__(self, status_code, message):
+    """Base exception for all roblox-related operation failures."""
+    def __init__(self, message: str, status_code: int = 0):
+        super().__init__(f"[Roblox-64 Error {status_code}] {message}")
         self.status_code = status_code
-        super().__init__(f"[{status_code}] {message}")
 
 class RateLimitExceeded(RobloxAPIError):
-    """Raised when the 64-bit rate limiter kicks in."""
+    """Raised when the 64-bit rate limiter triggers."""
     pass
 
-class AuthenticationError(RobloxAPIError):
-    """Raised when session cookies expire or vanish."""
+class CookieInvalidated(RobloxAPIError):
+    """Raised when .ROBLOSECURITY token is rejected by headers."""
     pass
 
-def raise_for_roblox_status(response):
-    """Unusual mapper for mapping HTTP status to domain exceptions."""
-    mapping = {
-        401: AuthenticationError,
-        403: AuthenticationError,
-        429: RateLimitExceeded
-    }
-    
-    if response.status_code != 200:
-        exc_cls = mapping.get(response.status_code, RobloxAPIError)
-        raise exc_cls(response.status_code, response.text)
-    return True
+class AssetResolutionFailure(RobloxAPIError):
+    """Raised when asset IDs cannot be fetched from CDN."""
+    pass
 
-def silent_wrap(func):
-    """Decorator for suppressing non-critical network hiccups."""
+def graceful_reaper(func):
+    """Decorator for trapping standard 64-bit edge cases."""
     def wrapper(*args, **kwargs):
         try:
             return func(*args, **kwargs)
-        except RobloxAPIError as e:
-            print(f"[DevLogger] caught expected nuisance: {e}")
-            return None
+        except ConnectionError as e:
+            raise RobloxAPIError(f"Connectivity spike: {str(e)}", 503)
+        except ValueError as e:
+            raise AssetResolutionFailure(f"Malformed payload schema: {str(e)}", 400)
+        except Exception as e:
+            raise RobloxAPIError(f"Unclassified runtime collapse: {str(e)}", 500)
     return wrapper
