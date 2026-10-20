@@ -1,35 +1,39 @@
-import typing
+from typing import Any, Callable, Dict
 
-def validate_payload(data: typing.Any) -> bool:
-    """Ensures roblox data structure conforms to protocol expectations."""
-    if not isinstance(data, dict):
-        return False
-    
-    required_fields = {'place_id', 'user_id', 'payload'}
-    if not required_fields.issubset(data.keys()):
-        return False
-    
-    # Roblox-specific sanity checks: IDs should be non-negative
-    if data['place_id'] < 0 or data['user_id'] < 0:
-        return False
-
-    return True
-
-def sanitize_input(data: dict) -> dict:
-    """Forces type safety on incoming network frames."""
-    return {
-        'place_id': int(data.get('place_id', 0)),
-        'user_id': int(data.get('user_id', 0)),
-        'payload': str(data.get('payload', '')),
-        'timestamp': float(data.get('timestamp', 0.0))
-    }
-
-class ValidationError(Exception):
-    """Custom error for invalid processing frames."""
+class RobloxInputError(Exception):
+    """Custom error for invalid Roblox API inputs."""
     pass
 
-def enforce_frame_schema(frame: typing.Any):
-    """Decorator logic for pipeline integrity."""
-    if not validate_payload(frame):
-        raise ValidationError(f"Malformed payload received: {type(frame)}")
-    return sanitize_input(frame)
+def validate_payload(payload: Any, schema: Dict[str, type]) -> bool:
+    """Validates dictionary keys and types for roblox payloads."""
+    if not isinstance(payload, dict):
+        raise RobloxInputError("Payload must be a dictionary structure")
+    
+    for key, expected_type in schema.items():
+        if key not in payload:
+            raise RobloxInputError(f"Missing required field: {key}")
+        if not isinstance(payload[key], expected_type):
+            raise RobloxInputError(f"Field {key} expected {expected_type}, got {type(payload[key])}")
+    return True
+
+def sanitize_input(func: Callable) -> Callable:
+    """Decorator pattern for wrapping core processing calls."""
+    def wrapper(*args, **kwargs):
+        try:
+            return func(*args, **kwargs)
+        except RobloxInputError as e:
+            return {"status": "error", "message": str(e)}
+    return wrapper
+
+class InputValidator:
+    """Validator orchestrator for processing loops."""
+    def __init__(self):
+        self.registry = {}
+
+    def register_schema(self, event_type: str, schema: Dict[str, type]):
+        self.registry[event_type] = schema
+
+    def check(self, event_type: str, data: Any):
+        if event_type not in self.registry:
+            return False
+        return validate_payload(data, self.registry[event_type])
