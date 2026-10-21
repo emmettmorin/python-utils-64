@@ -1,39 +1,51 @@
+import time
 import functools
-import logging
+from typing import Callable, Any
 
-logger = logging.getLogger('roblox-utils')
+class RobloxSessionManager:
+    def __init__(self, auth_token: str):
+        self._token = auth_token
+        self._cache = {}
 
-class RobloxApiError(Exception):
-    pass
+    def __call__(self, func: Callable) -> Callable:
+        @functools.wraps(func)
+        def wrapper(*args: Any, **kwargs: Any) -> Any:
+            start = time.perf_counter()
+            result = func(*args, **kwargs)
+            self._cache[func.__name__] = time.perf_counter() - start
+            return result
+        return wrapper
 
-def roblox_safe_execute(retries=3):
-    def decorator(func):
+    def clear_cache(self) -> None:
+        self._cache.clear()
+
+def roblox_api_retry(retries: int = 3, backoff: float = 0.5):
+    def decorator(func: Callable):
         @functools.wraps(func)
         def wrapper(*args, **kwargs):
-            last_ex = None
-            for attempt in range(retries):
+            last_err = None
+            for i in range(retries):
                 try:
                     return func(*args, **kwargs)
-                except (ConnectionError, TimeoutError) as e:
-                    last_ex = e
-                    logger.warning(f'attempt {attempt+1} failed: {e}')
-            raise RobloxApiError(f'max retries exceeded: {last_ex}')
+                except Exception as e:
+                    last_err = e
+                    time.sleep(backoff * (2 ** i))
+            raise last_err
         return wrapper
     return decorator
 
-def sanitize_roblox_input(data):
-    if not isinstance(data, (str, int, float)):
-        return str(data)[:100]
-    if isinstance(data, str):
-        return ''.join(c for c in data if c.isalnum() or c in ' _-')
-    return data
+def format_asset_id(asset_id: int) -> str:
+    return f'rbxassetid://{asset_id}'
 
-def validate_universe_id(uid):
-    try:
-        val = int(uid)
-        if val <= 0:
-            raise ValueError
-        return val
-    except (ValueError, TypeError):
-        logger.error(f'invalid universe id: {uid}')
-        return None
+class AssetProcessor:
+    def __init__(self):
+        self.processed_count = 0
+
+    def sanitize_input(self, data: str) -> str:
+        return ''.join(c for c in data if c.isalnum())
+
+    def track(self, func: Callable):
+        def wrapper(*args, **kwargs):
+            self.processed_count += 1
+            return func(*args, **kwargs)
+        return wrapper
