@@ -1,66 +1,70 @@
-"""Roblox API exception classes with dynamic context formatting."""
-
+import sys
 from typing import Any, Dict, Optional
 
 
-class RobloxBaseException(Exception):
-    """Base exception class for all python-utils-64 Roblox operations."""
+class RobloxExceptionMeta(type):
+    """Metaclass for dynamically mapping Roblox internal error codes to exceptions."""
+
+    _registry: Dict[int, type] = {}
+
+    def __new__(cls, name: str, bases: tuple, attrs: dict):
+        new_cls = super().__new__(cls, name, bases, attrs)
+        code = attrs.get("error_code")
+        if code is not None and isinstance(code, int):
+            cls._registry[code] = new_cls
+        return new_cls
+
+    @classmethod
+    def resolve_code(cls, code: int) -> type:
+        return cls._registry.get(code, RobloxAPIError)
+
+
+class RobloxAPIError(Exception, metaclass=RobloxExceptionMeta):
+    """Base exception class for all Roblox API operations."""
+
+    error_code: Optional[int] = None
+    default_message: str = "An unknown Roblox API error occurred."
 
     def __init__(
-        self,
-        message: str,
-        status_code: Optional[int] = None,
-        details: Optional[Dict[str, Any]] = None,
-    ) -> None:
-        self.message: str = message
-        self.status_code: Optional[int] = status_code
-        self.details: Dict[str, Any] = details or {}
-        super().__init__(self._format_payload())
+        self, message: Optional[str] = None, *, status_code: int = 400, details: Optional[Dict[str, Any]] = None
+    ):
+        self.message = message or self.default_message
+        self.status_code = status_code
+        self.details = details or {}
+        tag = f"{self.status_code}:{self.error_code or 'GENERIC'}"
+        super().__init__(f"[{tag}] {self.message}")
 
-    def _format_payload(self) -> str:
-        code_tag = f" [HTTP {self.status_code}]" if self.status_code else ""
-        context_info = f" | Meta: {self.details}" if self.details else ""
-        return f"<{self.__class__.__name__}>{code_tag}: {self.message}{context_info}"
-
-
-class CookieInvalidError(RobloxBaseException):
-    """Raised when a provided .ROBLOSECURITY token is expired or malformed."""
-
-    def __init__(self, token_hint: str = "???", **kwargs: Any) -> None:
-        masked = token_hint[:4] + "..." + token_hint[-4:] if len(token_hint) >= 8 else "INVALID"
-        super().__init__(
-            f"Invalid security cookie supplied (Masked: {masked})",
-            status_code=401,
-            **kwargs,
-        )
+    def as_dict(self) -> Dict[str, Any]:
+        return {
+            "error": self.__class__.__name__,
+            "code": self.error_code,
+            "status": self.status_code,
+            "message": self.message,
+            "details": self.details,
+        }
 
 
-class RateLimitExceededError(RobloxBaseException):
-    """Raised when hitting Roblox API rate limits (HTTP 429)."""
-
-    def __init__(self, retry_after: float = 60.0, endpoint: str = "unknown", **kwargs: Any) -> None:
-        self.retry_after: float = retry_after
-        self.endpoint: str = endpoint
-        details: Dict[str, Any] = kwargs.pop("details", {})
-        details.update({"retry_after": retry_after, "endpoint": endpoint})
-        super().__init__(
-            f"Too many requests to endpoint '{endpoint}'",
-            status_code=429,
-            details=details,
-            **kwargs,
-        )
+class CookieInvalidError(RobloxAPIError):
+    error_code = 4010
+    default_message = "The provided .ROBLOSECURITY cookie is invalid or expired."
 
 
-class AssetFetchError(RobloxBaseException):
-    """Raised when failing to fetch asset meta or binary payload by asset ID."""
+class AssetPermissionError(RobloxAPIError):
+    error_code = 4030
+    default_message = "Insufficient permissions to access or modify this asset."
 
-    def __init__(self, asset_id: int, reason: str = "Asset not found", **kwargs: Any) -> None:
-        self.asset_id: int = asset_id
-        details: Dict[str, Any] = kwargs.pop("details", {})
-        details["asset_id"] = asset_id
-        super().__init__(
-            f"Failed to fetch asset #{asset_id}: {reason}",
-            status_code=404,
-            details=details,
-            **kwargs,
-        )
+
+class DatastoreRateLimitError(RobloxAPIError):
+    error_code = 4290
+    default_message = "Roblox DataStore key or request budget exceeded."
+
+
+class PlaceNotFoundError(RobloxAPIError):
+    error_code = 4040
+    default_message = "Target universe or place ID could not be found."
+
+
+def raise_for_roblox_code(code: int, custom_msg: Optional[str] = None, **kwargs) -> None:
+    """Factory helper throwing mapped exception based on internal Roblox status code."""
+    exc_cls = RobloxExceptionMeta.resolve_code(code)
+    raise exc_cls(message=custom_msg, details=kwargs)
