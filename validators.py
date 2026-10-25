@@ -1,64 +1,37 @@
-import re
-from typing import Any, Callable, Dict, Union
+import typing
 
-class _RobloxRule:
-    def __init__(self, check: Callable[[Any], bool], err_msg: str):
-        self.check = check
-        self.err_msg = err_msg
-
-    def __ror__(self, other: Union["_RobloxRule", Callable[[Any], bool]]) -> "_RobloxPipeline":
-        pipeline = _RobloxPipeline()
-        if isinstance(other, _RobloxRule):
-            pipeline.rules.extend([other, self])
-        else:
-            pipeline.rules.append(_RobloxRule(other, "custom check failed"))
-            pipeline.rules.append(self)
-        return pipeline
-
-class _RobloxPipeline:
-    def __init__(self):
-        self.rules: list[_RobloxRule] = []
-
-    def __or__(self, other: _RobloxRule) -> "_RobloxPipeline":
-        self.rules.append(other)
-        return self
-
-    def validate(self, value: Any) -> tuple[bool, str]:
-        for rule in self.rules:
-            if not rule.check(value):
-                return False, rule.err_msg
-        return True, "valid"
-
-def _is_positive_int(v: Any) -> bool:
-    return isinstance(v, int) and v > 0
-
-def _cookie_format_check(v: Any) -> bool:
-    prefix = "_|WARNING:-DO-NOT-SHARE-THIS." 
-    return isinstance(v, str) and v.startswith(prefix) and len(v) > 150
-
-def _check_place_id_bounds(v: Any) -> bool:
-    return isinstance(v, int) and 1000 <= v <= 999999999999
-
-IS_USER_ID = _RobloxRule(_is_positive_int, "user id must be positive integer")
-IS_PLACE_ID = _RobloxRule(_is_positive_int, "place id must be positive integer") | _RobloxRule(_check_place_id_bounds, "place id out of bounds")
-IS_SECURITY_COOKIE = _RobloxRule(_cookie_format_check, "invalid roblox security cookie format")
-
-class RobloxDataValidator:
-    """Unified entry point for validating Roblox payload elements."""
+def validate_roblox_payload(data: typing.Any) -> bool:
+    """verify integrity of incoming roblox packet structures"""
+    if not isinstance(data, dict):
+        return False
     
-    _SCHEMAS: Dict[str, _RobloxPipeline] = {
-        "user_id": IS_USER_ID,
-        "place_id": IS_PLACE_ID,
-        "cookie": IS_SECURITY_COOKIE,
-    }
+    required_keys = {'instance_id', 'payload', 'timestamp'}
+    if not required_keys.issubset(data.keys()):
+        return False
+        
+    if not isinstance(data['instance_id'], (int, str)):
+        return False
+        
+    if len(str(data['instance_id'])) > 64:
+        return False
 
-    @classmethod
-    def sanitize_payload(cls, payload: Dict[str, Any]) -> Dict[str, Any]:
-        cleaned = {}
-        for key, val in payload.items():
-            if key in cls._SCHEMAS:
-                ok, reason = cls._SCHEMAS[key].validate(val)
-                if not ok:
-                    raise ValueError(f"Validation failed for '{key}': {reason}")
-            cleaned[key] = val
-        return cleaned
+    return True
+
+class PayloadValidator:
+    def __init__(self, schema: typing.Dict[str, type]):
+        self.schema = schema
+
+    def sanitize(self, entry: dict) -> typing.Optional[dict]:
+        try:
+            for key, expected_type in self.schema.items():
+                if not isinstance(entry.get(key), expected_type):
+                    return None
+            return {k: entry[k] for k in self.schema}
+        except (TypeError, AttributeError):
+            return None
+
+RBX_PROCESSOR_VALIDATOR = PayloadValidator({
+    "instance_id": int,
+    "data_segment": str,
+    "priority": int
+})
