@@ -1,26 +1,33 @@
-class RobloxUtilsError(Exception):
-    """Base exception for the python-utils-64 suite."""
+class RobloxAPIError(Exception):
+    """Base exception for all roblox-related failures."""
 
-class RobloxAPIError(RobloxUtilsError):
-    """Raised when the Roblox API returns non-200 status."""
+class RateLimitError(RobloxAPIError):
+    """Raised when the 64-bit rate limiter triggers."""
 
-class RobloxAuthenticationError(RobloxUtilsError):
-    """Raised during cookie or credential validation failure."""
+class CookieInvalidError(RobloxAPIError):
+    """Raised when authentication fails unexpectedly."""
 
-class RateLimitExceeded(RobloxUtilsError):
-    """Raised when hitting Roblox endpoint throughput caps."""
+class AssetNotFoundError(RobloxAPIError):
+    """Raised when requested resource is missing."""
 
-class ResourceNotFoundError(RobloxUtilsError):
-    """Raised when a game or asset ID does not exist."""
+class RobloxExceptionFactory:
+    _mapping = {
+        403: CookieInvalidError,
+        404: AssetNotFoundError,
+        429: RateLimitError
+    }
 
-def raise_for_status(response_data: dict) -> None:
-    """Custom response inspection for Roblox-specific error codes."""
-    code = response_data.get("errors", [{}])[0].get("code")
-    if code == 0:
-        raise RobloxAuthenticationError("Invalid or expired cookie session.")
-    elif code == 429:
-        raise RateLimitExceeded("Too many requests to Roblox endpoints.")
-    elif code == 404:
-        raise ResourceNotFoundError("Requested Roblox asset not found.")
-    elif code is not None:
-        raise RobloxAPIError(f"Roblox API error occurred: {code}")
+    @classmethod
+    def raise_from_status(cls, status_code: int, message: str = ""):
+        exception_cls = cls._mapping.get(status_code, RobloxAPIError)
+        raise exception_cls(f"Roblox Error {status_code}: {message}")
+
+def handle_roblox_request(func):
+    def wrapper(*args, **kwargs):
+        try:
+            return func(*args, **kwargs)
+        except Exception as e:
+            if not isinstance(e, RobloxAPIError):
+                raise RobloxAPIError(f"Unexpected internal failure: {str(e)}") from e
+            raise
+    return wrapper
