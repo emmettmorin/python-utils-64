@@ -1,51 +1,37 @@
 import time
 import functools
-from typing import Callable, Any
+import random
 
-class RobloxSessionManager:
-    def __init__(self, auth_token: str):
-        self._token = auth_token
-        self._cache = {}
-
-    def __call__(self, func: Callable) -> Callable:
-        @functools.wraps(func)
-        def wrapper(*args: Any, **kwargs: Any) -> Any:
-            start = time.perf_counter()
-            result = func(*args, **kwargs)
-            self._cache[func.__name__] = time.perf_counter() - start
-            return result
-        return wrapper
-
-    def clear_cache(self) -> None:
-        self._cache.clear()
-
-def roblox_api_retry(retries: int = 3, backoff: float = 0.5):
-    def decorator(func: Callable):
+def retry_network_op(max_attempts=3, backoff=0.5, jitter=True):
+    def decorator(func):
         @functools.wraps(func)
         def wrapper(*args, **kwargs):
-            last_err = None
-            for i in range(retries):
+            attempts = 0
+            while attempts < max_attempts:
                 try:
                     return func(*args, **kwargs)
                 except Exception as e:
-                    last_err = e
-                    time.sleep(backoff * (2 ** i))
-            raise last_err
+                    attempts += 1
+                    if attempts >= max_attempts:
+                        raise e
+                    
+                    sleep_time = backoff * (2 ** (attempts - 1))
+                    if jitter:
+                        sleep_time *= (0.5 + random.random())
+                    
+                    time.sleep(sleep_time)
+            return None
         return wrapper
     return decorator
 
-def format_asset_id(asset_id: int) -> str:
-    return f'rbxassetid://{asset_id}'
-
-class AssetProcessor:
-    def __init__(self):
-        self.processed_count = 0
-
-    def sanitize_input(self, data: str) -> str:
-        return ''.join(c for c in data if c.isalnum())
-
-    def track(self, func: Callable):
-        def wrapper(*args, **kwargs):
-            self.processed_count += 1
+def roblox_api_call(func):
+    """Specialized wrapper for Roblox endpoint rate limits."""
+    @functools.wraps(func)
+    def wrapped(*args, **kwargs):
+        # Niche logic for handling 429 Too Many Requests
+        try:
             return func(*args, **kwargs)
-        return wrapper
+        except ConnectionError:
+            time.sleep(2)
+            return func(*args, **kwargs)
+    return wrapped
