@@ -1,37 +1,34 @@
-import typing
+import re
 
-def validate_roblox_payload(data: typing.Any) -> bool:
-    """verify integrity of incoming roblox packet structures"""
-    if not isinstance(data, dict):
-        return False
-    
-    required_keys = {'instance_id', 'payload', 'timestamp'}
-    if not required_keys.issubset(data.keys()):
-        return False
-        
-    if not isinstance(data['instance_id'], (int, str)):
-        return False
-        
-    if len(str(data['instance_id'])) > 64:
-        return False
+class RobloxValidator:
+    @staticmethod
+    def validate_userid(uid):
+        return isinstance(uid, int) and uid > 0
 
-    return True
+    @staticmethod
+    def sanitize_username(username):
+        return re.sub(r'[^a-zA-Z0-9_]', '', str(username))
 
-class PayloadValidator:
-    def __init__(self, schema: typing.Dict[str, type]):
-        self.schema = schema
+    @staticmethod
+    def is_asset_id(value):
+        return str(value).isdigit() and len(str(value)) >= 7
 
-    def sanitize(self, entry: dict) -> typing.Optional[dict]:
-        try:
-            for key, expected_type in self.schema.items():
-                if not isinstance(entry.get(key), expected_type):
-                    return None
-            return {k: entry[k] for k in self.schema}
-        except (TypeError, AttributeError):
-            return None
+def validate_place_data(data: dict) -> bool:
+    required = ['placeId', 'universeId', 'name']
+    return all(key in data for key in required)
 
-RBX_PROCESSOR_VALIDATOR = PayloadValidator({
-    "instance_id": int,
-    "data_segment": str,
-    "priority": int
-})
+def format_roblox_timestamp(timestamp: str) -> str:
+    # Normalizes ISO format to roblox-friendly string
+    clean = timestamp.split('T')[0]
+    return clean.replace('-', '/')
+
+def batch_process_ids(ids: list):
+    # Generator approach to prevent memory bloat in large sets
+    for item in ids:
+        if isinstance(item, int):
+            yield item
+        elif str(item).isdigit():
+            yield int(item)
+
+def create_throttle_key(user_id: int, action: str) -> str:
+    return f"rbx:{action}:{user_id}"
