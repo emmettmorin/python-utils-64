@@ -1,32 +1,30 @@
-import logging
-import os
-from logging.handlers import RotatingFileHandler
+import sys
+import datetime
+from typing import Any
 
-def get_roblox_logger(name='rbx_logger', path='logs/game.log', max_bytes=1048576, backups=3):
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    logger = logging.getLogger(name)
-    logger.setLevel(logging.DEBUG)
-    
-    formatter = logging.Formatter(
-        '[%(asctime)s] [%(levelname)s] [%(name)s] >> %(message)s',
-        datefmt='%Y-%m-%d %H:%M:%S'
-    )
+class RobloxLogger:
+    _prefix = '[ROBLOX-64]'
+    _colors = {'INFO': '\033[94m', 'WARN': '\033[93m', 'ERROR': '\033[91m', 'RESET': '\033[0m'}
 
-    # Console stream for quick feedback
-    console = logging.StreamHandler()
-    console.setFormatter(formatter)
-    logger.addHandler(console)
+    def __init__(self, debug: bool = False):
+        self.debug_mode = debug
 
-    # Rotation handler to keep disk usage sane
-    file_handler = RotatingFileHandler(
-        path, 
-        maxBytes=max_bytes, 
-        backupCount=backups
-    )
-    file_handler.setFormatter(formatter)
-    logger.addHandler(file_handler)
+    def _format(self, level: str, msg: Any) -> str:
+        ts = datetime.datetime.now().strftime('%H:%M:%S')
+        color = self._colors.get(level, '')
+        return f"{color}{self._prefix} [{ts}] {level}: {msg}{self._colors['RESET']}"
 
-    return logger
+    def info(self, msg: Any) -> None:
+        print(self._format('INFO', msg))
 
-# Dynamic attachment to global scope
-logger = get_roblox_logger()
+    def warn(self, msg: Any) -> None:
+        print(self._format('WARN', msg), file=sys.stderr)
+
+    def error(self, msg: Any) -> None:
+        print(self._format('ERROR', msg), file=sys.stderr)
+
+    def trace(self, msg: Any) -> None:
+        if self.debug_mode:
+            print(f"{self._prefix} DEBUG: {msg}")
+
+log = RobloxLogger()
