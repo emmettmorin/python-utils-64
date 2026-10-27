@@ -1,30 +1,43 @@
-import sys
-import datetime
-from typing import Any
+import time
+import collections
+import functools
 
 class RobloxLogger:
-    _prefix = '[ROBLOX-64]'
-    _colors = {'INFO': '\033[94m', 'WARN': '\033[93m', 'ERROR': '\033[91m', 'RESET': '\033[0m'}
+    """High-performance ring buffer logging for Roblox API streams."""
+    def __init__(self, capacity=1000):
+        self._buffer = collections.deque(maxlen=capacity)
+        self._last_flush = time.monotonic()
+        self._batch_threshold = 0.5
 
-    def __init__(self, debug: bool = False):
-        self.debug_mode = debug
+    def log(self, message: str, level: str = "INFO") -> None:
+        timestamp = time.monotonic()
+        entry = f"[{timestamp:.4f}] {level}: {message}"
+        self._buffer.append(entry)
+        
+        if timestamp - self._last_flush > self._batch_threshold:
+            self.flush()
 
-    def _format(self, level: str, msg: Any) -> str:
-        ts = datetime.datetime.now().strftime('%H:%M:%S')
-        color = self._colors.get(level, '')
-        return f"{color}{self._prefix} [{ts}] {level}: {msg}{self._colors['RESET']}"
+    def flush(self) -> None:
+        if not self._buffer:
+            return
+        
+        data = "\n".join(list(self._buffer))
+        try:
+            with open("roblox_core.log", "a") as f:
+                f.write(data + "\n")
+            self._buffer.clear()
+            self._last_flush = time.monotonic()
+        except OSError:
+            pass
 
-    def info(self, msg: Any) -> None:
-        print(self._format('INFO', msg))
+    def __call__(self, func):
+        @functools.wraps(func)
+        def wrapper(*args, **kwargs):
+            try:
+                return func(*args, **kwargs)
+            except Exception as e:
+                self.log(f"Error in {func.__name__}: {str(e)}", "CRITICAL")
+                raise
+        return wrapper
 
-    def warn(self, msg: Any) -> None:
-        print(self._format('WARN', msg), file=sys.stderr)
-
-    def error(self, msg: Any) -> None:
-        print(self._format('ERROR', msg), file=sys.stderr)
-
-    def trace(self, msg: Any) -> None:
-        if self.debug_mode:
-            print(f"{self._prefix} DEBUG: {msg}")
-
-log = RobloxLogger()
+logger = RobloxLogger()
