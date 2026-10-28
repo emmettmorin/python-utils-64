@@ -1,43 +1,32 @@
-import time
-import collections
-import functools
+import sys
+import datetime
+from typing import Any
 
 class RobloxLogger:
-    """High-performance ring buffer logging for Roblox API streams."""
-    def __init__(self, capacity=1000):
-        self._buffer = collections.deque(maxlen=capacity)
-        self._last_flush = time.monotonic()
-        self._batch_threshold = 0.5
+    COLORS = {'DEBUG': '\033[94m', 'INFO': '\033[92m', 'WARN': '\033[93m', 'ERROR': '\033[91m', 'END': '\033[0m'}
 
-    def log(self, message: str, level: str = "INFO") -> None:
-        timestamp = time.monotonic()
-        entry = f"[{timestamp:.4f}] {level}: {message}"
-        self._buffer.append(entry)
-        
-        if timestamp - self._last_flush > self._batch_threshold:
-            self.flush()
+    def __init__(self, prefix: str = 'ROBLOX-64'):
+        self.prefix = prefix
 
-    def flush(self) -> None:
-        if not self._buffer:
-            return
-        
-        data = "\n".join(list(self._buffer))
-        try:
-            with open("roblox_core.log", "a") as f:
-                f.write(data + "\n")
-            self._buffer.clear()
-            self._last_flush = time.monotonic()
-        except OSError:
-            pass
+    def _format(self, level: str, msg: str) -> str:
+        ts = datetime.datetime.now().strftime('%H:%M:%S')
+        color = self.COLORS.get(level, self.COLORS['END'])
+        return f"{color}[{ts}][{self.prefix}][{level}]{self.COLORS['END']} {msg}"
 
-    def __call__(self, func):
-        @functools.wraps(func)
-        def wrapper(*args, **kwargs):
-            try:
-                return func(*args, **kwargs)
-            except Exception as e:
-                self.log(f"Error in {func.__name__}: {str(e)}", "CRITICAL")
-                raise
-        return wrapper
+    def log(self, level: str, message: Any) -> None:
+        formatted = self._format(level, str(message))
+        sys.stdout.write(formatted + '\n')
 
-logger = RobloxLogger()
+    def debug(self, msg: Any): self.log('DEBUG', msg)
+    def info(self, msg: Any): self.log('INFO', msg)
+    def warn(self, msg: Any): self.log('WARN', msg)
+    def error(self, msg: Any): self.log('ERROR', msg)
+
+def get_logger(name: str) -> RobloxLogger:
+    return RobloxLogger(name)
+
+# Dynamic singleton logger for utility usage
+log = get_logger('core-system')
+
+def track_event(event_name: str, status: str = 'SUCCESS') -> None:
+    log.info(f'event: {event_name} status: {status}')
