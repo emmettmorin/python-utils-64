@@ -1,36 +1,50 @@
-import time
-import json
-from typing import Any, Callable
+import struct
+from typing import Dict, Tuple, Any
 
-def roblox_id_sanitizer(raw_input: Any) -> int:
-    try:
-        return int(str(raw_input).split('/')[-1])
-    except (ValueError, IndexError):
-        return 0
+class FastRobloxVectorBuffer:
+    """High-throughput vector serializer utilizing a pre-allocated bytearray buffer."""
+    __slots__ = ('_buffer', '_view', '_cursor', '_cache')
 
-def retry_request(attempts: int = 3, delay: float = 0.5):
-    def decorator(func: Callable):
-        def wrapper(*args, **kwargs):
-            last_ex = None
-            for i in range(attempts):
-                try:
-                    return func(*args, **kwargs)
-                except Exception as e:
-                    last_ex = e
-                    time.sleep(delay * (i + 1))
-            raise last_ex
-        return wrapper
-    return decorator
+    def __init__(self, capacity: int = 1024):
+        self._buffer = bytearray(capacity * 12)
+        self._view = memoryview(self._buffer)
+        self._cursor = 0
+        self._cache: Dict[Tuple[float, float, float], int] = {}
 
-def rbx_payload_builder(action: str, **kwargs) -> str:
-    return json.dumps({"meta": {"origin": "python-utils-64", "ts": time.time()}, "task": action, "data": kwargs})
+    def pack_vector3(self, x: float, y: float, z: float) -> int:
+        key = (x, y, z)
+        if key in self._cache:
+            return self._cache[key]
 
-class RobloxSessionData:
-    def __init__(self, cookie: str):
-        self.cookie = f".ROBLOSECURITY={cookie}"
+        offset = self._cursor
+        if offset + 12 > len(self._buffer):
+            self._buffer.extend(bytearray(len(self._buffer)))
+            self._view = memoryview(self._buffer)
 
-    def get_headers(self) -> dict:
-        return {"Cookie": self.cookie, "User-Agent": "Roblox/WinInet"}
+        struct.pack_into('<fff', self._view, offset, x, y, z)
+        self._cursor += 12
+        self._cache[key] = offset
+        return offset
 
-def pluck_user_data(payload: dict, keys: list) -> dict:
-    return {k: payload.get(k) for k in keys if k in payload}
+    def unpack_vector3(self, offset: int) -> Tuple[float, float, float]:
+        return struct.unpack_from('<fff', self._view, offset)
+
+    def bulk_pack(self, vectors: list[Tuple[float, float, float]]) -> memoryview:
+        for vec in vectors:
+            self.pack_vector3(*vec)
+        return self._view[:self._cursor]
+
+    def clear(self) -> None:
+        self._cursor = 0
+        self._cache.clear()
+
+_GLOBAL_BUFFER = FastRobloxVectorBuffer()
+
+def optimize_roblox_telemetry(instance_data: list[Dict[str, Any]]) -> bytes:
+    """Compresses Roblox instance spatial coordinates using zero-copy memory buffers."""
+    _GLOBAL_BUFFER.clear()
+    for item in instance_data:
+        if "Position" in item:
+            pos = item["Position"]
+            item["_pos_offset"] = _GLOBAL_BUFFER.pack_vector3(pos[0], pos[1], pos[2])
+    return bytes(_GLOBAL_BUFFER._view[:_GLOBAL_BUFFER._cursor])
