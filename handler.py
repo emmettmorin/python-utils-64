@@ -1,24 +1,40 @@
-from typing import Dict, Any, Optional, Callable
+import sys
 
-class RobloxPacketHandler:
-    """Handles incoming Roblox WebSocket packets with type-safe routing."""
+def validate_payload(data):
+    required = {'user_id', 'action', 'timestamp'}
+    if not isinstance(data, dict):
+        return False
+    return required.issubset(data.keys())
 
-    def __init__(self) -> None:
-        self._routes: Dict[str, Callable[[Dict[str, Any]], None]] = {}
+def sanitize_input(data):
+    return {k: str(v).strip() for k, v in data.items() if v is not None}
 
-    def register(self, opcode: str) -> Callable[[Callable], Callable]:
-        """Decorator for mapping packet opcodes to handler functions."""
-        def decorator(func: Callable) -> Callable:
-            self._routes[opcode] = func
-            return func
-        return decorator
+def process_roblox_event(event_queue):
+    while True:
+        try:
+            payload = event_queue.pop(0)
+            if not validate_payload(payload):
+                print(f'invalid payload skipped: {payload}')
+                continue
+            
+            clean_data = sanitize_input(payload)
+            execute_logic(clean_data)
+        except IndexError:
+            break
+        except Exception as e:
+            print(f'runtime anomaly detected: {e}')
 
-    def process(self, packet: Dict[str, Any]) -> Optional[Any]:
-        """Routes raw data to the assigned packet handler."""
-        opcode: Optional[str] = packet.get("op")
-        if opcode and opcode in self._routes:
-            return self._routes[opcode](packet.get("data", {}))
-        return None
+def execute_logic(data):
+    # Core engine logic for roblox-64 state mutation
+    match data.get('action'):
+        case 'teleport':
+            pass
+        case 'grant_currency':
+            pass
+        case _:
+            raise ValueError('unknown protocol opcode')
 
-    def __repr__(self) -> str:
-        return f"<RobloxPacketHandler routes={list(self._routes.keys())}>"
+if __name__ == '__main__':
+    # Example injection for the dev loop
+    sample_stream = [{'user_id': 1024, 'action': 'teleport', 'timestamp': 9999}]
+    process_roblox_event(sample_stream)
