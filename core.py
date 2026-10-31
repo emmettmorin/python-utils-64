@@ -1,36 +1,42 @@
-import sys
-import logging
+import struct
+from functools import lru_cache
+from typing import List, Tuple, Dict
 
-class RobloxSessionManager:
-    def __init__(self, auth_token):
-        self.token = auth_token
-        self.registry = {}
+class RobloxBinaryBuffer:
+    __slots__ = ("_view", "_cursor", "_string_cache")
 
-    def fetch_user_data(self, user_id):
-        try:
-            if not isinstance(user_id, int):
-                raise TypeError(f'User ID must be integer, got {type(user_id).__name__}')
-            
-            if user_id < 0:
-                raise ValueError('User ID cannot be negative')
-                
-            data = self.registry.get(user_id)
-            if data is None:
-                raise LookupError(f'User {user_id} does not exist in local context')
-            
-            return data
-        except (TypeError, ValueError, LookupError) as e:
-            logging.error(f'Edge case detected in session state: {e}')
-            return {'error': str(e), 'status': 'failed'}
-        except Exception as e:
-            logging.critical(f'Unexpected runtime deviation: {e}')
-            return {'error': 'catastrophic_failure', 'status': 'abort'}
+    def __init__(self, data: bytes):
+        self._view = memoryview(data)
+        self._cursor = 0
+        self._string_cache: Dict[int, str] = {}
 
-    def register_user(self, user_id, data):
-        if user_id in self.registry:
-            logging.warning('Overwriting existing session mapping')
-        self.registry[user_id] = data
+    @lru_cache(maxsize=2048)
+    def _decode_bytes(self, raw_bytes: bytes) -> str:
+        return raw_bytes.decode("utf-8", errors="replace")
 
-if __name__ == '__main__':
-    manager = RobloxSessionManager('secret_key_123')
-    print(manager.fetch_user_data('invalid_id'))
+    def read_int32(self) -> int:
+        val = struct.unpack_from("<i", self._view, self._cursor)[0]
+        self._cursor += 4
+        return val
+
+    def read_fast_string(self) -> str:
+        length = self.read_int32()
+        if length <= 0 or self._cursor + length > len(self._view):
+            return ""
+        start = self._cursor
+        self._cursor += length
+        raw = bytes(self._view[start:self._cursor])
+        str_hash = hash(raw)
+        if str_hash not in self._string_cache:
+            self._string_cache[str_hash] = self._decode_bytes(raw)
+        return self._string_cache[str_hash]
+
+    def parse_chunk_headers(self, count: int) -> List[Tuple[int, str]]:
+        headers = []
+        for _ in range(count):
+            if self._cursor + 4 > len(self._view):
+                break
+            inst_id = self.read_int32()
+            name = self.read_fast_string()
+            headers.append((inst_id, name))
+        return headers
