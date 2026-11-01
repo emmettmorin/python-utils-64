@@ -1,49 +1,51 @@
 # python-utils-64
 
-`python-utils-64` is a lightweight Python toolkit designed to streamline interactions with the Roblox ecosystem. It simplifies complex API tasks, allowing developers to automate workflows and manage game data with minimal boilerplate code.
+`python-utils-64` is a lightweight Python toolkit designed to streamline interactions with the Roblox ecosystem. It provides robust wrappers for common API tasks and data processing workflows for developers.
 
 ### Features
 
-*   **Cookie-based Authentication:** Securely initialize sessions for Roblox API requests with built-in CSRF token handling.
-*   **Asset Management:** Automated utilities for uploading and updating decals, meshes, and audio assets directly from your local filesystem.
-*   **DataStore Interfacing:** Robust wrappers for interacting with Roblox DataStores, including batch retrieval and error-resilient writing.
-*   **Universe Stats:** High-level functions to fetch real-time analytics, concurrent player counts, and server-side configurations.
+*   **Asset Handling:** Simplified functions for fetching metadata, images, and configuration data from Roblox assets via public APIs.
+*   **RBXL Parser:** Native support for parsing and traversing `.rbxl` file structures without requiring Roblox Studio.
+*   **Data Serialization:** Optimized utility methods for handling Roblox's unique `JSON` format and `Luau` table serialization.
+*   **Rate-Limit Awareness:** Built-in backoff logic and session management for frequent requests to the Roblox Web API.
 
 ### Installation
 
-Install `python-utils-64` directly via pip:
+Install the package directly via pip:
 
 ```bash
 pip install python-utils-64
 ```
 
-To install from source for development:
+To install from source for local development:
 
 ```bash
 git clone https://github.com/Developer/python-utils-64.git
 cd python-utils-64
-pip install .
+pip install -e .
 ```
 
 ### Usage
 
-Below is a simple example of how to authenticate and fetch the current player count for a specific universe:
+Here is a quick example of how to fetch asset information using the library:
 
 ```python
-from python_utils_64 import RobloxClient
+from python_utils_64 import AssetClient
 
-# Initialize the client with your .ROBLOSECURITY cookie
-client = RobloxClient(cookie="YOUR_COOKIE_HERE")
+client = AssetClient()
 
-# Fetch real-time analytics for a specific Universe ID
-universe_id = 123456789
-stats = client.get_universe_stats(universe_id)
+# Retrieve metadata for a specific model or decal
+asset_info = client.get_asset_info(123456789)
 
-print(f"Current players online: {stats.playing}")
+print(f"Asset Name: {asset_info['Name']}")
+print(f"Creator: {asset_info['Creator']['Name']}")
 ```
 
+### Requirements
+*   Python 3.8+
+*   `requests` library
+
 ### License
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)
-
-This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
+This project is licensed under the MIT License - see the `LICENSE` file for details.
