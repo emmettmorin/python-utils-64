@@ -1,40 +1,33 @@
-import time
-import functools
-from typing import Callable, Any
+import logging
+from logging.handlers import RotatingFileHandler
+import os
 
-class RobloxSessionManager:
-    """Manages roblox-related state with creative persistence."""
-    def __init__(self, auth_token: str):
-        self._token = auth_token
-        self.last_sync = time.time()
+def setup_roblox_logger(name: str = "roblox_bot", log_dir: str = "logs"):
+    if not os.path.exists(log_dir):
+        os.makedirs(log_dir)
 
-    def validate_session(self, func: Callable) -> Callable:
-        @functools.wraps(func)
-        def wrapper(*args: Any, **kwargs: Any) -> Any:
-            if time.time() - self.last_sync > 3600:
-                self.refresh()
-            return func(*args, **kwargs)
-        return wrapper
+    logger = logging.getLogger(name)
+    logger.setLevel(logging.DEBUG)
 
-    def refresh(self) -> None:
-        self.last_sync = time.time()
+    formatter = logging.Formatter(
+        "%(asctime)s | %(levelname)8s | %(name)s | %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S"
+    )
 
-def normalize_roblosecurity(token: str) -> str:
-    """Sanitize token input for standard API usage."""
-    return token.replace('.ROBLOSECURITY=', '').strip()
+    # rotating file handler: 5MB limit, keep 3 backups
+    path = os.path.join(log_dir, f"{name}.log")
+    file_handler = RotatingFileHandler(
+        path, maxBytes=5*1024*1024, backupCount=3, encoding="utf-8"
+    )
+    file_handler.setFormatter(formatter)
 
-def retry_request(max_retries: int = 3, delay: float = 0.5):
-    """Exponential backoff decorator for network flakiness."""
-    def decorator(func: Callable):
-        @functools.wraps(func)
-        def wrapper(*args, **kwargs):
-            last_ex = None
-            for i in range(max_retries):
-                try:
-                    return func(*args, **kwargs)
-                except Exception as e:
-                    last_ex = e
-                    time.sleep(delay * (2 ** i))
-            raise last_ex
-        return wrapper
-    return decorator
+    console_handler = logging.StreamHandler()
+    console_handler.setFormatter(formatter)
+
+    if not logger.handlers:
+        logger.addHandler(file_handler)
+        logger.addHandler(console_handler)
+
+    return logger
+
+log = setup_roblox_logger()
