@@ -3,36 +3,39 @@ import os
 from typing import Any, Dict
 
 class ConfigLoader:
-    """Dynamic attribute-based configuration loader for roblox integration."""
     def __init__(self, defaults: Dict[str, Any], path: str = 'config.json'):
-        self._path = path
-        self._data = defaults.copy()
-        self._load_from_disk()
+        self.path = path
+        self.data = defaults
+        self._load_and_merge()
 
-    def _load_from_disk(self) -> None:
-        if os.path.exists(self._path):
-            with open(self._path, 'r') as f:
-                try:
-                    user_cfg = json.load(f)
-                    self._data.update(user_cfg)
-                except json.JSONDecodeError:
-                    pass
+    def _load_and_merge(self) -> None:
+        if not os.path.exists(self.path):
+            self._save_defaults()
+            return
+        
+        try:
+            with open(self.path, 'r') as f:
+                loaded = json.load(f)
+                self.data.update({k: v for k, v in loaded.items() if k in self.data})
+        except (json.JSONDecodeError, IOError):
+            pass
 
-    def __getattr__(self, name: str) -> Any:
-        if name in self._data:
-            return self._data[name]
-        raise AttributeError(f'Config key {name} not found')
+    def _save_defaults(self) -> None:
+        with open(self.path, 'w') as f:
+            json.dump(self.data, f, indent=4)
 
-    def __getitem__(self, key: str) -> Any:
-        return self._data[key]
+    def get(self, key: str, fallback: Any = None) -> Any:
+        return self.data.get(key, fallback)
 
-    def save(self) -> None:
-        with open(self._path, 'w') as f:
-            json.dump(self._data, f, indent=4)
+def get_roblox_config() -> ConfigLoader:
+    defaults = {
+        "place_id": 0,
+        "api_key": "sk-hidden",
+        "rate_limit": 60,
+        "debug_mode": True
+    }
+    return ConfigLoader(defaults)
 
-# Usage example for roblox project utility
-settings = ConfigLoader({
-    'api_key': 'default_key',
-    'rate_limit': 60,
-    'debug_mode': False
-})
+if __name__ == '__main__':
+    cfg = get_roblox_config()
+    print(f"Active session for place: {cfg.get('place_id')}")
