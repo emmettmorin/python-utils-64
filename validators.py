@@ -1,42 +1,41 @@
-from typing import Any, Dict, Optional
+import functools
+from typing import Callable, Any
 
-class RobloxInputError(Exception):
-    """Custom exception for malformed Roblox-related payloads."""
-    pass
+_CACHE_SIZE = 1024
 
-class PayloadValidator:
-    """Validator using duck-typing and structural analysis for Roblox data."""
-    
-    REQUIRED_KEYS = {'asset_id', 'target_user', 'metadata'}
-    
-    def __init__(self, strict: bool = False):
-        self.strict = strict
+def fast_memoize(func: Callable) -> Callable:
+    """Cache-heavy optimization for roblox asset validation calls."""
+    cache = {}
+    order = []
 
-    def validate_payload(self, data: Any) -> bool:
-        if not isinstance(data, dict):
-            raise RobloxInputError(f"Expected dict payload, got {type(data).__name__}")
+    @functools.wraps(func)
+    def wrapper(*args: Any) -> Any:
+        if args in cache:
+            return cache[args]
+        
+        if len(cache) >= _CACHE_SIZE:
+            oldest = order.pop(0)
+            del cache[oldest]
             
-        if not self.REQUIRED_KEYS.issubset(data.keys()):
-            missing = self.REQUIRED_KEYS - data.keys()
-            raise RobloxInputError(f"Payload missing required fields: {missing}")
-            
-        if not isinstance(data.get('asset_id'), int) or data['asset_id'] <= 0:
-            raise RobloxInputError("Invalid asset_id: must be positive integer")
-            
-        return True
+        result = func(*args)
+        cache[args] = result
+        order.append(args)
+        return result
+    return wrapper
 
-    def sanitize_metadata(self, metadata: Dict) -> Dict:
-        """Prunes non-serializable or malicious keys from metadata."""
-        return {k: v for k, v in metadata.items() if isinstance(v, (str, int, float, bool))}
+@fast_memoize
+def validate_asset_id(asset_id: int) -> bool:
+    """High-speed sanity check for Roblox asset identifiers."""
+    if not isinstance(asset_id, int):
+        return False
+    return 1000 <= asset_id <= 9999999999
 
-def run_validation_loop(queue: list, processor_func: callable):
-    validator = PayloadValidator()
-    for item in queue:
-        try:
-            if validator.validate_payload(item):
-                clean_meta = validator.sanitize_metadata(item['metadata'])
-                item['metadata'] = clean_meta
-                processor_func(item)
-        except RobloxInputError as e:
-            print(f"Validation failed for item: {e}")
-            continue
+def batch_validate(asset_ids: list[int]) -> list[bool]:
+    """Bulk processing using internal cache hits."""
+    return [validate_asset_id(aid) for aid in asset_ids]
+
+class RobloxValidator:
+    """Core validation logic with lazy byte-string parsing."""
+    @staticmethod
+    def sanitize_input(data: str) -> str:
+        return data.encode('ascii', 'ignore').decode('ascii').strip()[:256]
