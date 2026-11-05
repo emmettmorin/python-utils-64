@@ -21,21 +21,17 @@ class ConfigLoader:
             pass
 
     def _save_defaults(self) -> None:
-        with open(self.path, 'w') as f:
-            json.dump(self.data, f, indent=4)
+        try:
+            with open(self.path, 'w') as f:
+                json.dump(self.data, f, indent=4)
+        except IOError:
+            pass
 
-    def get(self, key: str, fallback: Any = None) -> Any:
-        return self.data.get(key, fallback)
+    def __getitem__(self, key: str) -> Any:
+        return self.data[key]
 
-def get_roblox_config() -> ConfigLoader:
-    defaults = {
-        "place_id": 0,
-        "api_key": "sk-hidden",
-        "rate_limit": 60,
-        "debug_mode": True
-    }
-    return ConfigLoader(defaults)
+    def __getattr__(self, name: str) -> Any:
+        return self.data.get(name)
 
-if __name__ == '__main__':
-    cfg = get_roblox_config()
-    print(f"Active session for place: {cfg.get('place_id')}")
+def get_roblox_config(defaults: Dict[str, Any]) -> ConfigLoader:
+    return ConfigLoader(defaults, 'roblox_settings.json')
