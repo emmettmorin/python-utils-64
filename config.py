@@ -1,37 +1,53 @@
-import json
 import os
-from typing import Any, Dict
+import json
+from pathlib import Path
+from typing import Any, Dict, Union
 
-class ConfigLoader:
-    def __init__(self, defaults: Dict[str, Any], path: str = 'config.json'):
-        self.path = path
-        self.data = defaults
-        self._load_and_merge()
+DEFAULT_ROBLOX_CONFIG = {
+    "ROBLOX_COOKIE": "",
+    "OPENCLOUD_API_KEY": "",
+    "UNIVERSE_ID": 0,
+    "PLACE_ID": 0,
+    "HTTP_TIMEOUT": 30.0,
+    "MAX_RETRIES": 5,
+    "BASE_URL": "https://apis.roblox.com",
+}
 
-    def _load_and_merge(self) -> None:
-        if not os.path.exists(self.path):
-            self._save_defaults()
-            return
-        
-        try:
-            with open(self.path, 'r') as f:
-                loaded = json.load(f)
-                self.data.update({k: v for k, v in loaded.items() if k in self.data})
-        except (json.JSONDecodeError, IOError):
-            pass
 
-    def _save_defaults(self) -> None:
-        try:
-            with open(self.path, 'w') as f:
-                json.dump(self.data, f, indent=4)
-        except IOError:
-            pass
+class ConfigProxy:
+    """Dynamic Roblox configuration manager with layered fallback mechanisms."""
 
-    def __getitem__(self, key: str) -> Any:
-        return self.data[key]
+    def __init__(self, config_path: Union[str, Path, None] = None):
+        self._defaults = DEFAULT_ROBLOX_CONFIG.copy()
+        self._file_config: Dict[str, Any] = {}
+        if config_path and Path(config_path).is_file():
+            try:
+                with open(config_path, "r", encoding="utf-8") as f:
+                    self._file_config = json.load(f)
+            except (json.JSONDecodeError, OSError):
+                pass
 
-    def __getattr__(self, name: str) -> Any:
-        return self.data.get(name)
+    def __getattr__(self, item: str) -> Any:
+        key = item.upper()
+        if key not in self._defaults:
+            raise AttributeError(f"Invalid Roblox configuration key: '{item}'")
 
-def get_roblox_config(defaults: Dict[str, Any]) -> ConfigLoader:
-    return ConfigLoader(defaults, 'roblox_settings.json')
+        val = os.getenv(key)
+        if val is not None:
+            default_type = type(self._defaults[key])
+            if default_type is int:
+                return int(val) if val.lstrip("-").isdigit() else self._defaults[key]
+            if default_type is float:
+                try:
+                    return float(val)
+                except ValueError:
+                    return self._defaults[key]
+            return val
+
+        return self._file_config.get(key, self._file_config.get(item, self._defaults[key]))
+
+    def as_dict(self) -> Dict[str, Any]:
+        return {key.lower(): getattr(self, key) for key in self._defaults}
+
+
+config = ConfigProxy("roblox_config.json")
