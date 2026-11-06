@@ -1,36 +1,39 @@
-import sys
-from typing import Any, Dict, List, Callable
+import logging
+from functools import wraps
 
-class RobloxSessionHandler:
-    def __init__(self, workspace: str = 'workspace'):
-        self.workspace = workspace
-        self.registry: Dict[str, Callable] = {}
+class RobloxRateLimitError(Exception): pass
 
-    def register_hook(self, event: str, callback: Callable):
-        self.registry[event] = callback
+class RobloxErrorHandler:
+    def __init__(self, retries=3):
+        self.retries = retries
+        self.logger = logging.getLogger('python-utils-64')
 
-    def execute_payload(self, event: str, data: Any):
-        if event in self.registry:
-            return self.registry[event](data)
-        return None
+    def resilient_execution(self, func):
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            attempts = 0
+            while attempts < self.retries:
+                try:
+                    return func(*args, **kwargs)
+                except (ConnectionError, TimeoutError) as e:
+                    attempts += 1
+                    self.logger.warning(f'Network glitch, attempt {attempts}: {e}')
+                    if attempts == self.retries: raise
+                except Exception as e:
+                    self.logger.error(f'Critical logic failure: {e}')
+                    return None
+        return wrapper
 
     @staticmethod
-    def serialize_rpc(params: List[Any]) -> str:
-        return ';'.join(map(str, params))
+    def validate_roblox_id(asset_id):
+        if not isinstance(asset_id, int) or asset_id <= 0:
+            return False
+        return True
 
-    def clean_orphaned_threads(self):
-        """Pruning routine for internal task management."""
-        [getattr(sys, '_getframe')().f_back.f_locals.pop(k, None) for k in list(locals().keys()) if 'thread' in k]
-
-class RobloxEventBuffer:
-    def __init__(self):
-        self.buffer = []
-
-    def push(self, entry: Dict):
-        self.buffer.append(entry)
-
-    def clear(self):
-        self.buffer = []
-
-    def __len__(self):
-        return len(self.buffer)
+    def wrap_api_call(self, call_func):
+        def proxy(*args, **kwargs):
+            if not self.validate_roblox_id(args[0]):
+                self.logger.error('invalid asset id provided')
+                return None
+            return self.resilient_execution(call_func)(*args, **kwargs)
+        return proxy
