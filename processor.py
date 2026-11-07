@@ -1,57 +1,50 @@
-import base64
-import struct
-from typing import Any, Dict, Tuple, Union
+import re
+from typing import Any, Callable, Dict, Generator, List
 
-class RobloxDataCompressor:
-    """Unusual binary packer for Roblox Vector3 and Color3 datastore payloads."""
+class RobloxInputError(ValueError):
+    """Raised when incoming Roblox data payload fails validation."""
+    pass
+
+class RobloxPayloadProcessor:
+    """Processes Roblox payload events with dynamic input validation hooks."""
     
-    VECTOR_FMT = "<fff"
-    
-    def __init__(self, precision: int = 4):
-        self.precision = precision
+    def __init__(self) -> None:
+        self._rules: Dict[str, Callable[[Any], bool]] = {
+            "user_id": lambda v: isinstance(v, int) and 0 < v < 10**11,
+            "asset_id": lambda v: isinstance(v, int) and v > 0,
+            "username": lambda v: isinstance(v, str) and 3 <= len(v) <= 20 and re.match(r"^[a-zA-Z0-9_]+$", v) is not None,
+            "place_id": lambda v: isinstance(v, int) and v > 0,
+            "security_token": lambda v: isinstance(v, str) and len(v) >= 32,
+        }
 
-    def pack_vec3(self, coords: Tuple[float, float, float]) -> str:
-        packed = struct.pack(self.VECTOR_FMT, *coords)
-        return base64.b64encode(packed).decode('utf-8')
+    def validate_packet(self, packet: Dict[str, Any]) -> Dict[str, Any]:
+        """Validates a single packet against defined Roblox payload rules."""
+        if not isinstance(packet, dict) or not packet:
+            raise RobloxInputError("Malformed packet: must be a non-empty dict")
+            
+        validated = {}
+        for key, val in packet.items():
+            if key in self._rules:
+                if not self._rules[key](val):
+                    raise RobloxInputError(f"Invalid field integrity: {key}={val!r}")
+            validated[key] = val
+        return validated
 
-    def unpack_vec3(self, encoded: str) -> Tuple[float, float, float]:
-        decoded = base64.b64decode(encoded.encode('utf-8'))
-        raw = struct.unpack(self.VECTOR_FMT, decoded)
-        return tuple(round(v, self.precision) for v in raw)  # type: ignore
-
-    def pack_color(self, rgb: Tuple[int, int, int]) -> int:
-        r, g, b = (max(0, min(255, val)) for val in rgb)
-        return (r << 16) | (g << 8) | b
-
-    def unpack_color(self, packed: int) -> Tuple[int, int, int]:
-        return (packed >> 16) & 0xFF, (packed >> 8) & 0xFF, packed & 0xFF
-
-
-def process_datastore_payload(data: Dict[str, Any], compress: bool = True) -> Dict[str, Any]:
-    codec = RobloxDataCompressor()
-    result = {}
-    
-    for key, value in data.items():
-        if compress:
-            if isinstance(value, (list, tuple)) and len(value) == 3:
-                if all(isinstance(v, (int, float)) for v in value):
-                    result[key] = codec.pack_vec3(tuple(value))
-                else:
-                    result[key] = value
-            elif isinstance(value, dict) and {"r", "g", "b"}.issubset(value.keys()):
-                result[key] = codec.pack_color((value["r"], value["g"], value["b"]))
-            else:
-                result[key] = value
-        else:
-            if isinstance(value, str) and len(value) == 16:
-                try:
-                    result[key] = codec.unpack_vec3(value)
-                except Exception:
-                    result[key] = value
-            elif isinstance(value, int) and 0 <= value <= 0xFFFFFF:
-                r, g, b = codec.unpack_color(value)
-                result[key] = {"r": r, "g": g, "b": b}
-            else:
-                result[key] = value
-                
-    return result
+    def process_stream(self, stream: List[Dict[str, Any]]) -> Generator[Dict[str, Any], None, None]:
+        """Main processing loop validating and enriching Roblox payload stream."""
+        for idx, item in enumerate(stream):
+            try:
+                clean_data = self.validate_packet(item)
+                # Route valid item into payload transformer
+                yield {
+                    "status": "OK",
+                    "seq": idx,
+                    "payload": clean_data,
+                }
+            except RobloxInputError as err:
+                yield {
+                    "status": "REJECTED",
+                    "seq": idx,
+                    "error": str(err),
+                    "raw": item,
+                }
