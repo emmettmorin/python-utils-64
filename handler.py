@@ -1,39 +1,31 @@
-import logging
-from functools import wraps
+import base64
+import zlib
+import json
 
-class RobloxRateLimitError(Exception): pass
+class RobloxDataBridge:
+    """Encapsulates unusual serialization for Roblox DataStore keys."""
+    def __init__(self, salt: str = "rbx-secure"):
+        self.salt = salt
 
-class RobloxErrorHandler:
-    def __init__(self, retries=3):
-        self.retries = retries
-        self.logger = logging.getLogger('python-utils-64')
+    def encode_payload(self, data: dict) -> str:
+        raw = json.dumps(data, separators=(',', ':'))
+        compressed = zlib.compress(raw.encode() + self.salt.encode())
+        return base64.urlsafe_b64encode(compressed).decode('ascii')
 
-    def resilient_execution(self, func):
-        @wraps(func)
-        def wrapper(*args, **kwargs):
-            attempts = 0
-            while attempts < self.retries:
-                try:
-                    return func(*args, **kwargs)
-                except (ConnectionError, TimeoutError) as e:
-                    attempts += 1
-                    self.logger.warning(f'Network glitch, attempt {attempts}: {e}')
-                    if attempts == self.retries: raise
-                except Exception as e:
-                    self.logger.error(f'Critical logic failure: {e}')
-                    return None
-        return wrapper
+    def decode_payload(self, payload: str) -> dict:
+        raw_data = base64.urlsafe_b64decode(payload.encode())
+        decompressed = zlib.decompress(raw_data).decode('utf-8')
+        return json.loads(decompressed.replace(self.salt, ""))
 
     @staticmethod
-    def validate_roblox_id(asset_id):
-        if not isinstance(asset_id, int) or asset_id <= 0:
-            return False
-        return True
+    def sanitize_key(key: str) -> str:
+        """Forces Roblox-friendly key constraints."""
+        return "".join([c for c in key if c.isalnum() or c in "_-"])[:50]
 
-    def wrap_api_call(self, call_func):
-        def proxy(*args, **kwargs):
-            if not self.validate_roblox_id(args[0]):
-                self.logger.error('invalid asset id provided')
-                return None
-            return self.resilient_execution(call_func)(*args, **kwargs)
-        return proxy
+def wrap_datastore_packet(data: dict) -> dict:
+    bridge = RobloxDataBridge()
+    return {
+        "payload": bridge.encode_payload(data),
+        "timestamp": bridge.sanitize_key("v1"),
+        "checksum": hash(str(data)) % 1000
+    }
