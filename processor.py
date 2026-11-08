@@ -1,50 +1,74 @@
-import re
-from typing import Any, Callable, Dict, Generator, List
+import json
+import math
+from typing import Any, Dict, Union, Callable
 
-class RobloxInputError(ValueError):
-    """Raised when incoming Roblox data payload fails validation."""
+class RobloxAssetError(Exception):
+    """Base exception for Roblox asset processing failures."""
     pass
 
-class RobloxPayloadProcessor:
-    """Processes Roblox payload events with dynamic input validation hooks."""
-    
-    def __init__(self) -> None:
-        self._rules: Dict[str, Callable[[Any], bool]] = {
-            "user_id": lambda v: isinstance(v, int) and 0 < v < 10**11,
-            "asset_id": lambda v: isinstance(v, int) and v > 0,
-            "username": lambda v: isinstance(v, str) and 3 <= len(v) <= 20 and re.match(r"^[a-zA-Z0-9_]+$", v) is not None,
-            "place_id": lambda v: isinstance(v, int) and v > 0,
-            "security_token": lambda v: isinstance(v, str) and len(v) >= 32,
-        }
+class CorruptPayloadError(RobloxAssetError):
+    """Raised when asset payload structure is unparseable."""
+    pass
 
-    def validate_packet(self, packet: Dict[str, Any]) -> Dict[str, Any]:
-        """Validates a single packet against defined Roblox payload rules."""
-        if not isinstance(packet, dict) or not packet:
-            raise RobloxInputError("Malformed packet: must be a non-empty dict")
-            
-        validated = {}
-        for key, val in packet.items():
-            if key in self._rules:
-                if not self._rules[key](val):
-                    raise RobloxInputError(f"Invalid field integrity: {key}={val!r}")
-            validated[key] = val
-        return validated
+class EdgeCaseGuard:
+    """Contextual decorator mapping specific edge cases to fallback values."""
 
-    def process_stream(self, stream: List[Dict[str, Any]]) -> Generator[Dict[str, Any], None, None]:
-        """Main processing loop validating and enriching Roblox payload stream."""
-        for idx, item in enumerate(stream):
+    def __init__(self, fallback: Any = None, catch_errs: tuple = (ValueError, TypeError, KeyError)):
+        self.fallback = fallback
+        self.catch_errs = catch_errs
+
+    def __call__(self, func: Callable) -> Callable:
+        def wrapper(*args: Any, **kwargs: Any) -> Any:
             try:
-                clean_data = self.validate_packet(item)
-                # Route valid item into payload transformer
-                yield {
-                    "status": "OK",
-                    "seq": idx,
-                    "payload": clean_data,
-                }
-            except RobloxInputError as err:
-                yield {
-                    "status": "REJECTED",
-                    "seq": idx,
-                    "error": str(err),
-                    "raw": item,
-                }
+                return func(*args, **kwargs)
+            except self.catch_errs as err:
+                if callable(self.fallback):
+                    return self.fallback(err, *args, **kwargs)
+                return self.fallback
+        return wrapper
+
+class AssetProcessor:
+    """Processes raw Roblox place and asset data with edge-case resistance."""
+
+    @staticmethod
+    @EdgeCaseGuard(fallback=0)
+    def sanitize_asset_id(raw_id: Union[int, str, float]) -> int:
+        """Normalizes Roblox asset IDs, safely deflecting negative, float, or overflow cases."""
+        if isinstance(raw_id, float) and (math.isnan(raw_id) or math.isinf(raw_id)):
+            return 0
+        val = int(abs(float(raw_id)))
+        return 0 if val > (2**63 - 1) else val
+
+    @staticmethod
+    def parse_vector3(data: Dict[str, Union[int, float]]) -> Dict[str, float]:
+        """Extracts Vector3 coordinates, guarding against missing axes or non-numeric values."""
+        coords = {}
+        for axis in ("X", "Y", "Z"):
+            val = data.get(axis, 0.0)
+            try:
+                num_val = float(val)
+                coords[axis] = 0.0 if math.isnan(num_val) or math.isinf(num_val) else num_val
+            except (ValueError, TypeError):
+                coords[axis] = 0.0
+        return coords
+
+    @classmethod
+    def safe_load_datastore_payload(cls, raw_data: Union[str, bytes, dict]) -> Dict[str, Any]:
+        """Parses Datastore payloads, resolving byte wrappers and corrupt JSON edges."""
+        if isinstance(raw_data, dict):
+            return raw_data
+        if isinstance(raw_data, bytes):
+            raw_data = raw_data.decode("utf-8", errors="ignore")
+
+        if not raw_data or not str(raw_data).strip():
+            return {}
+
+        try:
+            parsed = json.loads(raw_data)
+            return parsed if isinstance(parsed, dict) else {"raw_value": parsed}
+        except json.JSONDecodeError as exc:
+            cleaned = str(raw_data).replace("'", '"')
+            try:
+                return json.loads(cleaned)
+            except Exception:
+                raise CorruptPayloadError(f"Malformed Roblox datastore payload at byte {exc.pos}")
