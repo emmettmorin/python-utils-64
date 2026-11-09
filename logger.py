@@ -1,39 +1,26 @@
-import logging
-from logging.handlers import RotatingFileHandler
-import os
+import datetime
+import typing
 
-def get_roblox_logger(name='roblox_dev', log_file='debug.log', max_bytes=1048576, backup_count=3):
-    logger = logging.getLogger(name)
-    logger.setLevel(logging.DEBUG)
+class RobloxLogger:
+    """Custom logger tailored for roblox data streams."""
     
-    if logger.hasHandlers():
-        logger.handlers.clear()
+    def __init__(self, prefix: str = "[RBX-64]") -> None:
+        self.prefix: str = prefix
 
-    formatter = logging.Formatter('%(asctime)s | %(levelname)s | %(message)s')
+    def log(self, message: str, level: str = "INFO") -> None:
+        """Formats and outputs logs with dynamic levels."""
+        timestamp: str = datetime.datetime.now().strftime("%H:%M:%S")
+        formatted: str = f"{self.prefix} {timestamp} [{level.upper()}]: {message}"
+        print(formatted)
 
-    file_handler = RotatingFileHandler(
-        log_file, 
-        maxBytes=max_bytes, 
-        backupCount=backup_count
-    )
-    file_handler.setFormatter(formatter)
-    
-    console_handler = logging.StreamHandler()
-    console_handler.setFormatter(formatter)
-    
-    logger.addHandler(file_handler)
-    logger.addHandler(console_handler)
-    
-    return logger
+    def debug(self, data: typing.Any) -> None:
+        """Specialized debug hook for complex Roblox tables."""
+        self.log(f"DATA_DUMP: {str(data)}", "DEBUG")
 
-class RobloxLogAdapter:
-    """Injects context into roblox-dev logs"""
-    def __init__(self, logger, context):
-        self.logger = logger
-        self.context = context
+    def warn(self, reason: str) -> None:
+        """Warning stream for throttle and rate limits."""
+        self.log(reason, "WARN")
 
-    def info(self, msg):
-        self.logger.info(f"[{self.context}] {msg}")
-
-    def error(self, msg):
-        self.logger.error(f"[{self.context}] {msg}")
+def create_logger(name: str = "default") -> RobloxLogger:
+    """Factory function returning a configured instance."""
+    return RobloxLogger(prefix=f"[{name.upper()}-64]")
