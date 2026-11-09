@@ -1,74 +1,30 @@
-import sys
-from typing import Any, Dict, Optional
+class RobloxDataError(Exception):
+    """Base exception for data integrity issues."""
+    pass
 
+class RobloxSerializationError(RobloxDataError):
+    """Raised when data fails Roblox Luau conversion."""
+    def __init__(self, key, value, reason):
+        self.message = f"Serialization failure at {key} [{type(value).__name__}]: {reason}"
+        super().__init__(self.message)
 
-class RobloxExceptionMeta(type):
-    """Metaclass to auto-register edge-case error codes to exception types."""
+class RobloxRateLimitError(RobloxDataError):
+    """Raised when exceeding Roblox API throttle limits."""
+    pass
 
-    _registry: Dict[int, type] = {}
+class DataSchemaMismatch(RobloxDataError):
+    """Raised when internal dict schema drifts from target."""
+    def __init__(self, expected, actual):
+        self.message = f"Schema mismatch: expected {expected}, found {actual}"
+        super().__init__(self.message)
 
-    def __new__(mcs, name, bases, attrs):
-        cls = super().__new__(mcs, name, bases, attrs)
-        error_code = attrs.get("ERROR_CODE")
-        if error_code is not None:
-            mcs._registry[error_code] = cls
-        return cls
+class LuauTypeMismatch(RobloxDataError):
+    """Helper to cast Python types to Luau equivalents."""
+    _MAP = {int: 'number', str: 'string', bool: 'boolean', list: 'table', dict: 'table'}
 
-    @classmethod
-    def dispatch(cls, error_code: int, message: str, **details) -> "RobloxAPIError":
-        target_cls = cls._registry.get(error_code, RobloxAPIError)
-        return target_cls(message, error_code=error_code, **details)
-
-
-class RobloxAPIError(Exception, metaclass=RobloxExceptionMeta):
-    """Base exception for Roblox API interactions with contextual payloads."""
-
-    ERROR_CODE: Optional[int] = None
-
-    def __init__(self, message: str, error_code: Optional[int] = None, **details: Any):
-        self.message = message
-        self.error_code = error_code or self.ERROR_CODE or -1
-        self.details = details
-        super().__init__(f"[{self.error_code}] {self.message}")
-
-    def sanitize_context(self) -> Dict[str, Any]:
-        """Mask sensitive tokens or ROBLOSECURITY cookies in details."""
-        sanitized = {}
-        for k, v in self.details.items():
-            if "cookie" in k.lower() or "token" in k.lower():
-                sanitized[k] = "[REDACTED_SECURITY_TOKEN]"
-            else:
-                sanitized[k] = v
-        return sanitized
-
-
-class RateLimitExceeded(RobloxAPIError):
-    ERROR_CODE = 429
-
-    def __init__(self, message: str = "Too many requests", retry_after: float = 60.0, **details: Any):
-        super().__init__(message, error_code=429, retry_after=retry_after, **details)
-        self.retry_after = retry_after
-
-
-class AssetModeratedError(RobloxAPIError):
-    ERROR_CODE = 4031
-
-    def __init__(self, message: str = "Asset blocked by moderation", asset_id: int = 0, **details: Any):
-        super().__init__(message, error_code=4031, asset_id=asset_id, **details)
-        self.asset_id = asset_id
-
-
-class UniverseNotFound(RobloxAPIError):
-    ERROR_CODE = 4040
-
-    def __init__(self, message: str = "Target place or universe missing", universe_id: int = 0, **details: Any):
-        super().__init__(message, error_code=4040, universe_id=universe_id, **details)
-        self.universe_id = universe_id
-
-
-def raise_for_roblox_error(status_code: int, body: Dict[str, Any], token: Optional[str] = None):
-    """Dynamic edge-case dispatcher converting API payloads into rich errors."""
-    errors = body.get("errors", [])
-    msg = errors[0].get("message", "Unknown Roblox API fault") if errors else "API fault"
-    code = errors[0].get("code", status_code) if errors else status_code
-    raise RobloxExceptionMeta.dispatch(code, msg, raw_body=body, auth_token=token)
+    @staticmethod
+    def validate(key, value, expected_type):
+        actual = type(value)
+        if actual != expected_type:
+            raise LuauTypeMismatch(f"Key '{key}' expected {expected_type}, got {actual}")
+        return True
