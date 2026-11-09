@@ -1,31 +1,33 @@
+import json
 import base64
 import zlib
-import json
 
-class RobloxDataBridge:
-    """Encapsulates unusual serialization for Roblox DataStore keys."""
-    def __init__(self, salt: str = "rbx-secure"):
-        self.salt = salt
+class RobloxDataHandler:
+    """Utility for Roblox DataStore payload optimization"""
+    def __init__(self, compression_level=9):
+        self.level = compression_level
 
-    def encode_payload(self, data: dict) -> str:
-        raw = json.dumps(data, separators=(',', ':'))
-        compressed = zlib.compress(raw.encode() + self.salt.encode())
-        return base64.urlsafe_b64encode(compressed).decode('ascii')
+    def pack(self, data: dict) -> str:
+        """Serialize dict to compressed b64 string for storage"""
+        raw_bytes = json.dumps(data, separators=(',', ':')).encode('utf-8')
+        compressed = zlib.compress(raw_bytes, level=self.level)
+        return base64.b64encode(compressed).decode('utf-8')
 
-    def decode_payload(self, payload: str) -> dict:
-        raw_data = base64.urlsafe_b64decode(payload.encode())
-        decompressed = zlib.decompress(raw_data).decode('utf-8')
-        return json.loads(decompressed.replace(self.salt, ""))
+    def unpack(self, packed_string: str) -> dict:
+        """Decompress and parse Roblox DataStore payload"""
+        decoded = base64.b64decode(packed_string)
+        raw_data = zlib.decompress(decoded)
+        return json.loads(raw_data.decode('utf-8'))
 
-    @staticmethod
-    def sanitize_key(key: str) -> str:
-        """Forces Roblox-friendly key constraints."""
-        return "".join([c for c in key if c.isalnum() or c in "_-"])[:50]
+    def validate_keys(self, data: dict, required_keys: list) -> bool:
+        """Check presence of mandatory Roblox object fields"""
+        return all(key in data for key in required_keys)
 
-def wrap_datastore_packet(data: dict) -> dict:
-    bridge = RobloxDataBridge()
-    return {
-        "payload": bridge.encode_payload(data),
-        "timestamp": bridge.sanitize_key("v1"),
-        "checksum": hash(str(data)) % 1000
-    }
+    def sanitize_payload(self, data: dict) -> dict:
+        """Strip non-JSON serializable Roblox types"""
+        return {k: v for k, v in data.items() if isinstance(v, (str, int, float, bool, list, dict))}
+
+def process_roblox_packet(packet: dict) -> str:
+    handler = RobloxDataHandler()
+    safe_data = handler.sanitize_payload(packet)
+    return handler.pack(safe_data)
