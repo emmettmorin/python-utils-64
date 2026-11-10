@@ -1,53 +1,69 @@
-import os
 import json
-from pathlib import Path
-from typing import Any, Dict, Union
-
-DEFAULT_ROBLOX_CONFIG = {
-    "ROBLOX_COOKIE": "",
-    "OPENCLOUD_API_KEY": "",
-    "UNIVERSE_ID": 0,
-    "PLACE_ID": 0,
-    "HTTP_TIMEOUT": 30.0,
-    "MAX_RETRIES": 5,
-    "BASE_URL": "https://apis.roblox.com",
-}
+import os
+from typing import Any, Dict, Optional
 
 
-class ConfigProxy:
-    """Dynamic Roblox configuration manager with layered fallback mechanisms."""
+class RobloxConfig:
+    """Dynamic Roblox API configuration manager with sensible defaults."""
 
-    def __init__(self, config_path: Union[str, Path, None] = None):
-        self._defaults = DEFAULT_ROBLOX_CONFIG.copy()
-        self._file_config: Dict[str, Any] = {}
-        if config_path and Path(config_path).is_file():
-            try:
-                with open(config_path, "r", encoding="utf-8") as f:
-                    self._file_config = json.load(f)
-            except (json.JSONDecodeError, OSError):
-                pass
+    DEFAULT_CONFIG: Dict[str, Any] = {
+        "universe_id": 0,
+        "place_id": 0,
+        "api_key": "",
+        "cookie": "",
+        "cloud_base_url": "https://apis.roblox.com/",
+        "max_retries": 3,
+        "backoff_factor": 1.5,
+        "timeout": 30.0,
+        "user_agent": "PythonUtils64-RobloxClient/1.0",
+        "proxy_url": None,
+    }
 
-    def __getattr__(self, item: str) -> Any:
-        key = item.upper()
-        if key not in self._defaults:
-            raise AttributeError(f"Invalid Roblox configuration key: '{item}'")
+    def __init__(self, custom_config: Optional[Dict[str, Any]] = None):
+        self._storage: Dict[str, Any] = dict(self.DEFAULT_CONFIG)
+        if custom_config:
+            self._storage.update(custom_config)
+        self._apply_env_overrides()
 
-        val = os.getenv(key)
-        if val is not None:
-            default_type = type(self._defaults[key])
-            if default_type is int:
-                return int(val) if val.lstrip("-").isdigit() else self._defaults[key]
-            if default_type is float:
-                try:
-                    return float(val)
-                except ValueError:
-                    return self._defaults[key]
-            return val
+    def _apply_env_overrides(self) -> None:
+        """Override configuration values with ROBLOX_* environment variables."""
+        for key in self.DEFAULT_CONFIG:
+            env_key = f"ROBLOX_{key.upper()}"
+            if env_key in os.environ:
+                val = os.environ[env_key]
+                default_type = type(self.DEFAULT_CONFIG[key])
+                if default_type is bool:
+                    self._storage[key] = val.lower() in ("1", "true", "yes")
+                elif default_type in (int, float) and default_type is not type(None):
+                    try:
+                        self._storage[key] = default_type(val)
+                    except ValueError:
+                        pass
+                else:
+                    self._storage[key] = val
 
-        return self._file_config.get(key, self._file_config.get(item, self._defaults[key]))
+    def load_file(self, filepath: str) -> None:
+        """Load configuration settings from a JSON file."""
+        if os.path.exists(filepath):
+            with open(filepath, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                if isinstance(data, dict):
+                    self._storage.update(data)
+                    self._apply_env_overrides()
 
-    def as_dict(self) -> Dict[str, Any]:
-        return {key.lower(): getattr(self, key) for key in self._defaults}
+    def __getattr__(self, name: str) -> Any:
+        if name in self._storage:
+            return self._storage[name]
+        raise AttributeError(f"Configuration key '{name}' does not exist.")
 
+    def __getitem__(self, item: str) -> Any:
+        return getattr(self, item)
 
-config = ConfigProxy("roblox_config.json")
+    def export(self) -> Dict[str, Any]:
+        """Return sanitized active configuration copy."""
+        redacted = dict(self._storage)
+        if redacted.get("cookie"):
+            redacted["cookie"] = redacted["cookie"][:10] + "..."
+        if redacted.get("api_key"):
+            redacted["api_key"] = redacted["api_key"][:4] + "..."
+        return redacted
