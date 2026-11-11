@@ -1,33 +1,31 @@
-import json
-import base64
-import zlib
+import sys
+from typing import Dict, Any, Callable
 
-class RobloxDataHandler:
-    """Utility for Roblox DataStore payload optimization"""
-    def __init__(self, compression_level=9):
-        self.level = compression_level
+class RobloxHandler:
+    def __init__(self, target_version: str = '64'):
+        self.version = target_version
+        self.registry: Dict[str, Callable] = {}
 
-    def pack(self, data: dict) -> str:
-        """Serialize dict to compressed b64 string for storage"""
-        raw_bytes = json.dumps(data, separators=(',', ':')).encode('utf-8')
-        compressed = zlib.compress(raw_bytes, level=self.level)
-        return base64.b64encode(compressed).decode('utf-8')
+    def register_event(self, event_name: str):
+        def decorator(func: Callable):
+            self.registry[event_name] = func
+            return func
+        return decorator
 
-    def unpack(self, packed_string: str) -> dict:
-        """Decompress and parse Roblox DataStore payload"""
-        decoded = base64.b64decode(packed_string)
-        raw_data = zlib.decompress(decoded)
-        return json.loads(raw_data.decode('utf-8'))
+    def execute(self, event: str, *args, **kwargs) -> Any:
+        if event not in self.registry:
+            raise KeyError(f'unregistered roblox event: {event}')
+        return self.registry[event](*args, **kwargs)
 
-    def validate_keys(self, data: dict, required_keys: list) -> bool:
-        """Check presence of mandatory Roblox object fields"""
-        return all(key in data for key in required_keys)
+    @staticmethod
+    def sanitize_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
+        # Strips out non-roblox compatible binary junk
+        return {k: v for k, v in payload.items() if isinstance(v, (str, int, float, bool))}
 
-    def sanitize_payload(self, data: dict) -> dict:
-        """Strip non-JSON serializable Roblox types"""
-        return {k: v for k, v in data.items() if isinstance(v, (str, int, float, bool, list, dict))}
+    def batch_process(self, queue: list):
+        # Unusual generator-based state reset for batch operations
+        for item in queue:
+            yield self.execute(item['type'], **self.sanitize_payload(item.get('data', {})))
 
-def process_roblox_packet(packet: dict) -> str:
-    handler = RobloxDataHandler()
-    safe_data = handler.sanitize_payload(packet)
-    return handler.pack(safe_data)
+def get_instance(version: str = '64') -> RobloxHandler:
+    return RobloxHandler(version)
