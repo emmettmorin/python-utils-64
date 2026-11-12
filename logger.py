@@ -1,26 +1,38 @@
-import datetime
-import typing
+import logging
+import functools
+from typing import Any, Callable
 
-class RobloxLogger:
-    """Custom logger tailored for roblox data streams."""
-    
-    def __init__(self, prefix: str = "[RBX-64]") -> None:
-        self.prefix: str = prefix
+logger = logging.getLogger('roblox-utils-64')
 
-    def log(self, message: str, level: str = "INFO") -> None:
-        """Formats and outputs logs with dynamic levels."""
-        timestamp: str = datetime.datetime.now().strftime("%H:%M:%S")
-        formatted: str = f"{self.prefix} {timestamp} [{level.upper()}]: {message}"
-        print(formatted)
+def validate_payload(func: Callable) -> Callable:
+    @functools.wraps(func)
+    def wrapper(data: Any, *args: Any, **kwargs: Any) -> Any:
+        if not isinstance(data, dict):
+            logger.error(f'invalid payload type: {type(data).__name__}')
+            return None
+        if 'asset_id' not in data:
+            logger.warning('payload missing roblox asset_id')
+            return None
+        return func(data, *args, **kwargs)
+    return wrapper
 
-    def debug(self, data: typing.Any) -> None:
-        """Specialized debug hook for complex Roblox tables."""
-        self.log(f"DATA_DUMP: {str(data)}", "DEBUG")
+class RobloxProcessor:
+    def __init__(self):
+        self.queue = []
 
-    def warn(self, reason: str) -> None:
-        """Warning stream for throttle and rate limits."""
-        self.log(reason, "WARN")
+    @validate_payload
+    def process_item(self, item: dict):
+        logger.info(f'processing asset: {item["asset_id"]}')
+        return True
 
-def create_logger(name: str = "default") -> RobloxLogger:
-    """Factory function returning a configured instance."""
-    return RobloxLogger(prefix=f"[{name.upper()}-64]")
+    def run_loop(self, stream: list):
+        for item in stream:
+            result = self.process_item(item)
+            if not result:
+                logger.debug('skipping malformed entry')
+                continue
+            self.queue.append(item)
+
+if __name__ == '__main__':
+    proc = RobloxProcessor()
+    proc.run_loop([{'asset_id': 123}, 'invalid', {'data': 'missing'}])
