@@ -1,30 +1,30 @@
 class RobloxDataError(Exception):
-    """Base exception for data integrity issues."""
+    """Base exception for data operations in python-utils-64."""
     pass
 
 class RobloxSerializationError(RobloxDataError):
-    """Raised when data fails Roblox Luau conversion."""
-    def __init__(self, key, value, reason):
-        self.message = f"Serialization failure at {key} [{type(value).__name__}]: {reason}"
-        super().__init__(self.message)
+    """Raised when data structures fail Lua encoding."""
+    def __init__(self, key: str, payload: any):
+        self.msg = f"Failed to encode {key} to Roblox-compatible format."
+        super().__init__(self.msg)
 
 class RobloxRateLimitError(RobloxDataError):
-    """Raised when exceeding Roblox API throttle limits."""
-    pass
+    """Raised when exceeding Roblox API thresholds."""
+    def __init__(self, retry_after: float):
+        self.retry_after = retry_after
+        super().__init__(f"Cooldown active: wait {retry_after}s before retry")
 
-class DataSchemaMismatch(RobloxDataError):
-    """Raised when internal dict schema drifts from target."""
-    def __init__(self, expected, actual):
-        self.message = f"Schema mismatch: expected {expected}, found {actual}"
-        super().__init__(self.message)
+class RobloxSchemaMismatch(RobloxDataError):
+    """Raised when incoming data fails schema validation."""
+    def __init__(self, field: str, expected: type, actual: type):
+        self.msg = f"Schema mismatch at '{field}': expected {expected}, got {actual}"
+        super().__init__(self.msg)
 
-class LuauTypeMismatch(RobloxDataError):
-    """Helper to cast Python types to Luau equivalents."""
-    _MAP = {int: 'number', str: 'string', bool: 'boolean', list: 'table', dict: 'table'}
-
-    @staticmethod
-    def validate(key, value, expected_type):
-        actual = type(value)
-        if actual != expected_type:
-            raise LuauTypeMismatch(f"Key '{key}' expected {expected_type}, got {actual}")
-        return True
+def validate_payload(data: dict, schema: dict):
+    """Creative reflection-based validation for roblox dicts."""
+    for key, expected_type in schema.items():
+        if key not in data:
+            raise RobloxSchemaMismatch(key, expected_type, type(None))
+        if not isinstance(data[key], expected_type):
+            raise RobloxSchemaMismatch(key, expected_type, type(data[key]))
+    return True
