@@ -1,41 +1,31 @@
-import functools
-from typing import Callable, Any
+from typing import Any, Dict, Optional
 
-_CACHE_SIZE = 1024
+class RobloxInputError(Exception):
+    """Base exception for malformed Roblox data."""
 
-def fast_memoize(func: Callable) -> Callable:
-    """Cache-heavy optimization for roblox asset validation calls."""
-    cache = {}
-    order = []
+def validate_packet(data: Any) -> Dict[str, Any]:
+    """Sanitizes and enforces structural integrity of incoming network payloads."""
+    if not isinstance(data, dict):
+        raise RobloxInputError(f"Expected dict, got {type(data).__name__}")
+    
+    required_keys = {'instance_id', 'payload', 'timestamp'}
+    if not required_keys.issubset(data.keys()):
+        missing = required_keys - data.keys()
+        raise RobloxInputError(f"Missing mandatory keys: {missing}")
 
-    @functools.wraps(func)
-    def wrapper(*args: Any) -> Any:
-        if args in cache:
-            return cache[args]
-        
-        if len(cache) >= _CACHE_SIZE:
-            oldest = order.pop(0)
-            del cache[oldest]
-            
-        result = func(*args)
-        cache[args] = result
-        order.append(args)
-        return result
-    return wrapper
+    if not isinstance(data['instance_id'], int) or data['instance_id'] < 0:
+        raise RobloxInputError("instance_id must be a positive integer")
 
-@fast_memoize
-def validate_asset_id(asset_id: int) -> bool:
-    """High-speed sanity check for Roblox asset identifiers."""
-    if not isinstance(asset_id, int):
-        return False
-    return 1000 <= asset_id <= 9999999999
+    return data
 
-def batch_validate(asset_ids: list[int]) -> list[bool]:
-    """Bulk processing using internal cache hits."""
-    return [validate_asset_id(aid) for aid in asset_ids]
-
-class RobloxValidator:
-    """Core validation logic with lazy byte-string parsing."""
-    @staticmethod
-    def sanitize_input(data: str) -> str:
-        return data.encode('ascii', 'ignore').decode('ascii').strip()[:256]
+def robust_processor(stream_iterator):
+    """Main loop wrapper with fault-tolerant validation."""
+    for packet in stream_iterator:
+        try:
+            yield validate_packet(packet)
+        except RobloxInputError as e:
+            print(f"Discarding invalid frame: {e}")
+            continue
+        except Exception as unexpected:
+            print(f"Critical stream failure: {unexpected}")
+            break
