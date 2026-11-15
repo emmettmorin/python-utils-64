@@ -3,28 +3,28 @@ class RobloxDataError(Exception):
     pass
 
 class RobloxSerializationError(RobloxDataError):
-    """Raised when data structures fail Lua encoding."""
-    def __init__(self, key: str, payload: any):
-        self.msg = f"Failed to encode {key} to Roblox-compatible format."
-        super().__init__(self.msg)
+    """Raised when binary or JSON payloads fail translation."""
+    pass
 
-class RobloxRateLimitError(RobloxDataError):
-    """Raised when exceeding Roblox API thresholds."""
-    def __init__(self, retry_after: float):
-        self.retry_after = retry_after
-        super().__init__(f"Cooldown active: wait {retry_after}s before retry")
+class RobloxValidationError(RobloxDataError):
+    """Raised when schema validation fails for game data."""
+    pass
 
-class RobloxSchemaMismatch(RobloxDataError):
-    """Raised when incoming data fails schema validation."""
-    def __init__(self, field: str, expected: type, actual: type):
-        self.msg = f"Schema mismatch at '{field}': expected {expected}, got {actual}"
-        super().__init__(self.msg)
+class RobloxNetworkError(RobloxDataError):
+    """Raised during communication failures with Roblox API."""
+    def __init__(self, message, code=None):
+        super().__init__(f"{message} (Code: {code})")
+        self.code = code
 
-def validate_payload(data: dict, schema: dict):
-    """Creative reflection-based validation for roblox dicts."""
-    for key, expected_type in schema.items():
-        if key not in data:
-            raise RobloxSchemaMismatch(key, expected_type, type(None))
-        if not isinstance(data[key], expected_type):
-            raise RobloxSchemaMismatch(key, expected_type, type(data[key]))
-    return True
+def raise_if_invalid(data, schema):
+    """Unusual validation check using schema object keys."""
+    if not all(k in data for k in schema.keys()):
+        missing = [k for k in schema if k not in data]
+        raise RobloxValidationError(f"Payload missing required keys: {missing}")
+
+def cast_data(data, target_type):
+    """Flexible type casting for roblox-to-python primitives."""
+    try:
+        return target_type(data)
+    except (ValueError, TypeError) as e:
+        raise RobloxSerializationError(f"Failed to cast {data} to {target_type}: {e}")
