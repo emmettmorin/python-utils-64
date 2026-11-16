@@ -1,30 +1,36 @@
-class RobloxDataError(Exception):
-    """Base exception for data operations in python-utils-64."""
-    pass
+class RobloxAPIError(Exception):
+    """Base exception for API interactions."""
 
-class RobloxSerializationError(RobloxDataError):
-    """Raised when binary or JSON payloads fail translation."""
-    pass
+class RateLimitExceeded(RobloxAPIError):
+    """Raised when Roblox returns 429 status."""
 
-class RobloxValidationError(RobloxDataError):
-    """Raised when schema validation fails for game data."""
-    pass
+class SessionInvalidated(RobloxAPIError):
+    """Raised when the cookie or XCSRF token fails."""
 
-class RobloxNetworkError(RobloxDataError):
-    """Raised during communication failures with Roblox API."""
-    def __init__(self, message, code=None):
-        super().__init__(f"{message} (Code: {code})")
-        self.code = code
+class DataCorrupted(RobloxAPIError):
+    """Raised when payload structure is unexpected."""
 
-def raise_if_invalid(data, schema):
-    """Unusual validation check using schema object keys."""
-    if not all(k in data for k in schema.keys()):
-        missing = [k for k in schema if k not in data]
-        raise RobloxValidationError(f"Payload missing required keys: {missing}")
+def handle_roblox_faults(func):
+    """Decorator for graceful failure encapsulation."""
+    def wrapper(*args, **kwargs):
+        try:
+            return func(*args, **kwargs)
+        except ConnectionError:
+            raise RobloxAPIError("Network connectivity lost while reaching endpoint")
+        except (KeyError, TypeError) as e:
+            raise DataCorrupted(f"Unexpected Roblox schema changes: {str(e)}")
+        except Exception as e:
+            if '429' in str(e):
+                raise RateLimitExceeded("Backing off due to heavy request load")
+            raise
+    return wrapper
 
-def cast_data(data, target_type):
-    """Flexible type casting for roblox-to-python primitives."""
-    try:
-        return target_type(data)
-    except (ValueError, TypeError) as e:
-        raise RobloxSerializationError(f"Failed to cast {data} to {target_type}: {e}")
+def validate_response(response):
+    """Asserts success or throws typed exceptions."""
+    status = getattr(response, 'status_code', 200)
+    if status == 429:
+        raise RateLimitExceeded("Throttled by Roblox cloud services")
+    if status >= 500:
+        raise RobloxAPIError("Internal server fault on Roblox backend")
+    if status != 200:
+        raise RobloxAPIError(f"Unhandled API fault code: {status}")
