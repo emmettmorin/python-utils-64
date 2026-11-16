@@ -3,39 +3,42 @@ import os
 from typing import Any, Dict
 
 class ConfigLoader:
-    def __init__(self, file_path: str, defaults: Dict[str, Any]):
-        self.path = file_path
-        self.data = defaults.copy()
-        self._load_and_merge()
+    """Dynamic configuration loader for roblox utility scripts."""
+    def __init__(self, filepath: str, defaults: Dict[str, Any]):
+        self.filepath = filepath
+        self.defaults = defaults
+        self.data = self._load()
 
-    def _load_and_merge(self) -> None:
-        if os.path.exists(self.path):
-            try:
-                with open(self.path, 'r') as f:
-                    disk_data = json.load(f)
-                    self.data.update(disk_data)
-            except (json.JSONDecodeError, IOError):
-                pass
+    def _load(self) -> Dict[str, Any]:
+        if not os.path.exists(self.filepath):
+            self._save(self.defaults)
+            return self.defaults
+        try:
+            with open(self.filepath, 'r') as f:
+                return {**self.defaults, **json.load(f)}
+        except (json.JSONDecodeError, IOError):
+            return self.defaults
 
-    def __getattr__(self, name: str) -> Any:
-        return self.data.get(name)
+    def _save(self, data: Dict[str, Any]) -> None:
+        with open(self.filepath, 'w') as f:
+            json.dump(data, f, indent=4)
 
-    def __setattr__(self, name: str, value: Any) -> None:
-        if name in ['path', 'data']:
-            super().__setattr__(name, value)
-        else:
-            self.data[name] = value
-            self._save()
+    def __getitem__(self, key: str) -> Any:
+        return self.data.get(key, self.defaults.get(key))
 
-    def _save(self) -> None:
-        with open(self.path, 'w') as f:
-            json.dump(self.data, f, indent=4)
+    def update(self, key: str, value: Any) -> None:
+        self.data[key] = value
+        self._save(self.data)
 
-def get_roblox_config(path: str = 'settings.json') -> ConfigLoader:
+    @property
+    def raw(self) -> Dict[str, Any]:
+        return self.data
+
+def get_roblox_config(path: str = "config.json") -> ConfigLoader:
     defaults = {
-        "universe_id": 0,
         "api_key": "",
-        "throttle_limit": 60,
-        "debug_mode": False
+        "place_id": 0,
+        "debug_mode": False,
+        "rate_limit": 0.5
     }
     return ConfigLoader(path, defaults)
