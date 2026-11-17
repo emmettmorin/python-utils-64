@@ -1,31 +1,30 @@
-import logging
-from logging.handlers import RotatingFileHandler
-import os
+import sys
+import datetime
+from typing import Any
 
-def get_roblox_logger(name='roblox_dev', log_path='dev_log.log', max_bytes=1024*1024*5, backup_count=3):
-    logger = logging.getLogger(name)
-    logger.setLevel(logging.DEBUG)
-    
-    if not logger.handlers:
-        formatter = logging.Formatter(
-            '%(asctime)s | [%(levelname)s] | %(message)s',
-            datefmt='%Y-%m-%d %H:%M:%S'
-        )
-        
-        file_handler = RotatingFileHandler(
-            log_path, 
-            maxBytes=max_bytes, 
-            backupCount=backup_count
-        )
-        file_handler.setFormatter(formatter)
-        
-        stream_handler = logging.StreamHandler()
-        stream_handler.setFormatter(formatter)
-        
-        logger.addHandler(file_handler)
-        logger.addHandler(stream_handler)
-        
-    return logger
+class RobloxLogger:
+    COLORS = {"INFO": "\033[94m", "WARN": "\033[93m", "ERROR": "\033[91m", "RESET": "\033[0m"}
 
-# Quick init for module usage
-logger = get_roblox_logger()
+    def __init__(self, debug_mode: bool = False):
+        self.debug_mode = debug_mode
+
+    def _log(self, level: str, message: Any) -> None:
+        timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        color = self.COLORS.get(level, self.COLORS["RESET"])
+        print(f"{color}[{level}] [{timestamp}] {message}{self.COLORS['RESET']}")
+
+    def info(self, msg: Any) -> None:
+        self._log("INFO", msg)
+
+    def warn(self, msg: Any) -> None:
+        self._log("WARN", msg)
+
+    def error(self, msg: Any) -> None:
+        self._log("ERROR", msg)
+
+    def debug(self, msg: Any) -> None:
+        if self.debug_mode:
+            self._log("DEBUG", msg)
+
+def get_logger(name: str = "roblox-utils") -> RobloxLogger:
+    return RobloxLogger()
