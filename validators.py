@@ -1,31 +1,30 @@
-from typing import Any, Dict, Optional
+import typing
+
+def validate_roblox_input(data: typing.Any) -> bool:
+    """Sanity check for raw Roblox API payloads."""
+    if not isinstance(data, dict):
+        return False
+    
+    required = {"userId", "placeId", "gameId"}
+    if not required.issubset(data.keys()):
+        return False
+
+    # Roblox IDs are typically positive integers
+    for key in required:
+        val = data[key]
+        if not isinstance(val, int) or val <= 0:
+            return False
+    return True
+
+def sanitize_payload(payload: dict) -> dict:
+    """Strip non-essential metadata from incoming game packets."""
+    return {k: v for k, v in payload.items() if k in {"userId", "placeId", "gameId", "timestamp"}}
 
 class RobloxInputError(Exception):
-    """Base exception for malformed Roblox data."""
+    """Custom exception for invalid engine communications."""
+    pass
 
-def validate_packet(data: Any) -> Dict[str, Any]:
-    """Sanitizes and enforces structural integrity of incoming network payloads."""
-    if not isinstance(data, dict):
-        raise RobloxInputError(f"Expected dict, got {type(data).__name__}")
-    
-    required_keys = {'instance_id', 'payload', 'timestamp'}
-    if not required_keys.issubset(data.keys()):
-        missing = required_keys - data.keys()
-        raise RobloxInputError(f"Missing mandatory keys: {missing}")
-
-    if not isinstance(data['instance_id'], int) or data['instance_id'] < 0:
-        raise RobloxInputError("instance_id must be a positive integer")
-
-    return data
-
-def robust_processor(stream_iterator):
-    """Main loop wrapper with fault-tolerant validation."""
-    for packet in stream_iterator:
-        try:
-            yield validate_packet(packet)
-        except RobloxInputError as e:
-            print(f"Discarding invalid frame: {e}")
-            continue
-        except Exception as unexpected:
-            print(f"Critical stream failure: {unexpected}")
-            break
+def process_securely(data: typing.Any):
+    if not validate_roblox_input(data):
+        raise RobloxInputError("Malformed packet structure detected")
+    return sanitize_payload(data)
