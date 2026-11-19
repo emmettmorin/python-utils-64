@@ -1,39 +1,39 @@
-import json
-import base64
-import zlib
+import functools
+import logging
 
-class RobloxDataProcessor:
-    """creative binary serialization for roblox data payloads"""
-    @staticmethod
-    def encode_roblox_state(data: dict) -> str:
-        raw = json.dumps(data, separators=(',', ':')).encode('utf-8')
-        compressed = zlib.compress(raw, level=9)
-        return base64.b85encode(compressed).decode('ascii')
+class RobloxApiError(Exception):
+    pass
 
-    @staticmethod
-    def decode_roblox_state(payload: str) -> dict:
-        try:
-            compressed = base64.b85decode(payload.encode('ascii'))
-            raw = zlib.decompress(compressed)
-            return json.loads(raw.decode('utf-8'))
-        except (ValueError, zlib.error, json.JSONDecodeError):
-            return {}
+def robust_request(retries=3):
+    def decorator(func):
+        @functools.wraps(func)
+        def wrapper(*args, **kwargs):
+            last_ex = None
+            for attempt in range(retries):
+                try:
+                    return func(*args, **kwargs)
+                except (ConnectionError, TimeoutError) as e:
+                    last_ex = e
+                    logging.warning(f"Attempt {attempt+1} failed for {func.__name__}")
+            raise RobloxApiError(f"Failed after {retries} attempts: {last_ex}")
+        return wrapper
+    return decorator
 
-    @staticmethod
-    def sanitize_key(key: str) -> str:
-        """replaces non-standard characters with web-safe underscores"""
-        return ''.join(c if c.isalnum() else '_' for c in key)
+def parse_roblox_id(value):
+    try:
+        uid = int(value)
+        if uid < 0:
+            raise ValueError("Negative ID")
+        return uid
+    except (ValueError, TypeError):
+        logging.error(f"Invalid Roblox ID format: {value}")
+        return None
 
-    @classmethod
-    def pack_datastore_payload(cls, data: dict) -> dict:
-        return {
-            "v": 1,
-            "d": cls.encode_roblox_state(data),
-            "s": True
-        }
+def safe_execute(callback, fallback=None):
+    try:
+        return callback()
+    except Exception as err:
+        logging.critical(f"Execution trapped: {err}")
+        return fallback
 
-    @classmethod
-    def unpack_datastore_payload(cls, payload: dict) -> dict:
-        if payload.get("v") == 1:
-            return cls.decode_roblox_state(payload.get("d", ""))
-        return {}
+logging.basicConfig(level=logging.INFO)
