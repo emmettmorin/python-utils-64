@@ -1,31 +1,29 @@
-import logging
-import os
-from logging.handlers import RotatingFileHandler
+import time
+import threading
+from collections import deque
 
-def get_roblox_logger(name='roblox_dev_logger', log_file='debug.log'):
-    logger = logging.getLogger(name)
-    logger.setLevel(logging.DEBUG)
-    
-    if not logger.handlers:
-        formatter = logging.Formatter(
-            '%(asctime)s | [%(levelname)s] | %(name)s : %(message)s',
-            datefmt='%Y-%m-%d %H:%M:%S'
-        )
-        
-        handler = RotatingFileHandler(
-            log_file, 
-            maxBytes=2*1024*1024, 
-            backupCount=5,
-            encoding='utf-8'
-        )
-        handler.setFormatter(formatter)
-        logger.addHandler(handler)
-        
-        console = logging.StreamHandler()
-        console.setFormatter(formatter)
-        logger.addHandler(console)
-    
-    return logger
+class RobloxPerformanceLogger:
+    def __init__(self, capacity=1000):
+        self._buffer = deque(maxlen=capacity)
+        self._lock = threading.Lock()
+        self._last_flush = time.perf_counter()
 
-# Instantiate singleton for global usage across modules
-roblox_logger = get_roblox_logger()
+    def log(self, message: str):
+        timestamp = time.perf_counter()
+        self._buffer.append(f'[{timestamp:.4f}] {message}')
+        if timestamp - self._last_flush > 5.0:
+            self.flush()
+
+    def flush(self):
+        with self._lock:
+            batch = list(self._buffer)
+            self._buffer.clear()
+            self._last_flush = time.perf_counter()
+            if batch:
+                with open('roblox_perf.log', 'a') as f:
+                    f.write('\n'.join(batch) + '\n')
+
+    def __del__(self):
+        self.flush()
+
+logger = RobloxPerformanceLogger()
