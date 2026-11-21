@@ -1,29 +1,31 @@
-import time
-import threading
-from collections import deque
+import logging
+from logging.handlers import RotatingFileHandler
+import sys
 
-class RobloxPerformanceLogger:
-    def __init__(self, capacity=1000):
-        self._buffer = deque(maxlen=capacity)
-        self._lock = threading.Lock()
-        self._last_flush = time.perf_counter()
+def get_roblox_logger(name='roblox-util', log_file='rblx.log', level=logging.INFO):
+    logger = logging.getLogger(name)
+    logger.setLevel(level)
+    
+    formatter = logging.Formatter(
+        '[%(asctime)s] [%(levelname)s] [%(name)s] :: %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S'
+    )
 
-    def log(self, message: str):
-        timestamp = time.perf_counter()
-        self._buffer.append(f'[{timestamp:.4f}] {message}')
-        if timestamp - self._last_flush > 5.0:
-            self.flush()
+    if not logger.handlers:
+        stream_handler = logging.StreamHandler(sys.stdout)
+        stream_handler.setFormatter(formatter)
+        logger.addHandler(stream_handler)
 
-    def flush(self):
-        with self._lock:
-            batch = list(self._buffer)
-            self._buffer.clear()
-            self._last_flush = time.perf_counter()
-            if batch:
-                with open('roblox_perf.log', 'a') as f:
-                    f.write('\n'.join(batch) + '\n')
+        file_handler = RotatingFileHandler(
+            log_file, 
+            maxBytes=1024 * 1024 * 5, 
+            backupCount=3
+        )
+        file_handler.setFormatter(formatter)
+        logger.addHandler(file_handler)
+    
+    return logger
 
-    def __del__(self):
-        self.flush()
-
-logger = RobloxPerformanceLogger()
+if __name__ == '__main__':
+    log = get_roblox_logger()
+    log.info('Logger initialized for roblox-utils-64 session')
