@@ -1,33 +1,37 @@
-import time
-import functools
-from typing import Callable, Any
+import json
+import base64
+import zlib
+from typing import Any, Dict
 
-def roblox_retry(max_retries: int = 3, delay: float = 1.5, backoff: float = 2.0):
-    def decorator(func: Callable):
-        @functools.wraps(func)
-        def wrapper(*args: Any, **kwargs: Any) -> Any:
-            retries = 0
-            current_delay = delay
-            while retries < max_retries:
-                try:
-                    return func(*args, **kwargs)
-                except Exception as e:
-                    retries += 1
-                    if retries >= max_retries:
-                        raise e
-                    time.sleep(current_delay)
-                    current_delay *= backoff
-        return wrapper
-    return decorator
-
-class RobloxNetworkHandler:
-    """Contextual network wrapper for roblox-specific requests."""
+class RobloxDataProcessor:
+    """
+    A somewhat unusual approach to roblox data packing
+    using zlib compression for large JSON payloads.
+    """
     @staticmethod
-    @roblox_retry(max_retries=5)
-    def execute_api_call(request_func: Callable, *args: Any) -> Any:
-        return request_func(*args)
+    def encode(data: Dict[str, Any]) -> str:
+        json_str = json.dumps(data, separators=(',', ':'))
+        compressed = zlib.compress(json_str.encode('utf-8'), level=9)
+        return base64.b64encode(compressed).decode('ascii')
 
-# Dynamic monkey-patch helper for unstable endpoints
-def inject_retry_logic(obj: Any, method_name: str, **retry_params):
-    original = getattr(obj, method_name)
-    setattr(obj, method_name, roblox_retry(**retry_params)(original))
+    @staticmethod
+    def decode(payload: str) -> Dict[str, Any]:
+        compressed = base64.b64decode(payload)
+        json_str = zlib.decompress(compressed).decode('utf-8')
+        return json.loads(json_str)
+
+def sanitize_key(key: str) -> str:
+    """
+    removes non-alphanumeric chars to satisfy datastore requirements
+    """
+    return ''.join(c for c in key if c.isalnum())
+
+def format_player_data(player_id: int, stats: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    wraps stats into a roblox-ready manifest
+    """
+    return {
+        'pid': player_id,
+        'data': RobloxDataProcessor.encode(stats),
+        'meta': {'v': 1, 'c': 'zlib-base64'}
+    }
