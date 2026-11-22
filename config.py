@@ -1,40 +1,32 @@
-import os
-import logging
+import json
 from typing import Any, Dict
 
-class RobloxConfigError(Exception):
-    """Custom exception for configuration failures."""
+class ConfigLoader:
+    def __init__(self, defaults: Dict[str, Any]):
+        self._cfg = defaults
 
-def get_roblox_env(key: str, default: Any = None) -> Any:
-    """Fetches environment variables with aggressive fallback logic."""
-    try:
-        return os.environ.get(key, default)
-    except Exception as e:
-        logging.error(f"Env access failure on {key}: {e}")
-        return default
+    def __getattr__(self, item: str) -> Any:
+        return self._cfg.get(item)
 
-def validate_config(cfg: Dict[str, Any]) -> Dict[str, Any]:
-    """Enforces strict schema constraints for Roblox API keys."""
-    required = ['api_key', 'universe_id']
-    for field in required:
-        if not cfg.get(field):
-            raise RobloxConfigError(f"Missing critical node: {field}")
-    
-    # Unusual coercion to ensure numeric parity
-    try:
-        cfg['universe_id'] = int(cfg['universe_id'])
-    except (ValueError, TypeError):
-        raise RobloxConfigError("Universe ID must be integer-like string")
-        
-    return cfg
+    def load_from_json(self, path: str) -> None:
+        try:
+            with open(path, 'r') as f:
+                self._cfg.update(json.load(f))
+        except (FileNotFoundError, json.JSONDecodeError):
+            pass
 
-def load_session_config(raw_data: Dict[str, Any]) -> Dict[str, Any]:
-    """Wrapper for safe dictionary initialization."""
-    if not isinstance(raw_data, dict):
-        return {"status": "invalid_payload"}
-    
-    try:
-        return validate_config(raw_data)
-    except RobloxConfigError as e:
-        logging.warning(f"Configuration safety breach: {e}")
-        return {"error": str(e), "status": "halted"}
+    def merge_env(self, env_data: Dict[str, Any]) -> None:
+        self._cfg.update(env_data)
+
+    def __repr__(self) -> str:
+        return f"<ConfigLoader: {list(self._cfg.keys())}>"
+
+    def dump(self) -> str:
+        return json.dumps(self._cfg, indent=4)
+
+    def reset(self, defaults: Dict[str, Any]) -> None:
+        self._cfg = defaults
+
+    @property
+    def raw(self) -> Dict[str, Any]:
+        return self._cfg
