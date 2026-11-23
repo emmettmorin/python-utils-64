@@ -1,40 +1,50 @@
-import logging
-from typing import Any, Callable, TypeVar, ParamSpec
-from functools import wraps
+from typing import Annotated, Any, Callable, Dict, Optional, TypeVar, Union
+import json
+import time
 
-T = TypeVar('T')
-P = ParamSpec('P')
+T = TypeVar("T")
+EventRoute = Annotated[str, "Roblox API Event Route Identifier"]
 
-logger = logging.getLogger('roblox-utils-64')
+class TelemetryHandler:
+    """Dispatches and validates Roblox game server telemetry events using metadata-annotated callbacks."""
 
-class RobloxApiError(Exception):
-    """Custom exception for unexpected Roblox response structures."""
-    pass
+    def __init__(self, place_id: int, secret_token: str) -> None:
+        """Initialize the handler for a specific Roblox Place instance."""
+        self.place_id: int = place_id
+        self._token: str = secret_token
+        self._registry: Dict[str, Callable[[Dict[str, Any]], bool]] = {}
 
-def robust_request(func: Callable[P, T]) -> Callable[P, T | None]:
-    """Decorator to squelch ephemeral Roblox instability."""
-    @wraps(func)
-    def wrapper(*args: P.args, **kwargs: P.kwargs) -> T | None:
-        try:
-            return func(*args, **kwargs)
-        except (ConnectionError, TimeoutError) as e:
-            logger.warning(f"network hiccup detected: {e}")
-            return None
-        except KeyError as e:
-            logger.error(f"unexpected api schema change: {e}")
-            raise RobloxApiError("schema mismatch") from e
-        except Exception as e:
-            logger.critical(f"unknown catastrophe: {e}")
-            return None
-    return wrapper
+    def register(self, route: EventRoute) -> Callable[[Callable[[Dict[str, Any]], bool]], Callable[[Dict[str, Any]], bool]]:
+        """Decorator to register a callback function for a specific Roblox event route."""
+        def decorator(func: Callable[[Dict[str, Any]], bool]) -> Callable[[Dict[str, Any]], bool]:
+            self._registry[route] = func
+            return func
+        return decorator
 
-@robust_request
-def fetch_universe_data(universe_id: int) -> dict[str, Any]:
-    """Simulated payload fetcher with edge case guarding."""
-    if universe_id <= 0:
-        raise ValueError("invalid universe identifier provided")
-    return {"id": universe_id, "status": "active"}
+    def __call__(self, raw_payload: Union[str, bytes, Dict[str, Any]]) -> Dict[str, Union[bool, str, float]]:
+        """Process an incoming Roblox event payload and execute the registered callback."""
+        start_time: float = time.monotonic()
+        payload: Dict[str, Any]
+        
+        if isinstance(raw_payload, (str, bytes)):
+            payload = json.loads(raw_payload)
+        else:
+            payload = raw_payload
 
-def validate_payload(data: Any) -> bool:
-    """Structural duck-typing for roblox api response buffers."""
-    return isinstance(data, dict) and 'id' in data and data['id'] > 0
+        event_name: Optional[str] = payload.get("event")
+        payload_place: Optional[int] = payload.get("place_id")
+
+        if payload_place != self.place_id:
+            return {"success": False, "reason": "place_id mismatch", "latency": time.monotonic() - start_time}
+
+        if not event_name or event_name not in self._registry:
+            return {"success": False, "reason": f"unhandled event: {event_name}", "latency": time.monotonic() - start_time}
+
+        handler: Callable[[Dict[str, Any]], bool] = self._registry[event_name]
+        result: bool = handler(payload.get("data", {}))
+        
+        return {
+            "success": result,
+            "event": event_name,
+            "latency": time.monotonic() - start_time
+        }
