@@ -1,30 +1,38 @@
-import typing
+import functools
+from typing import Any, Callable
 
-def validate_roblox_input(data: typing.Any) -> bool:
-    """Sanity check for raw Roblox API payloads."""
-    if not isinstance(data, dict):
-        return False
-    
-    required = {"userId", "placeId", "gameId"}
-    if not required.issubset(data.keys()):
-        return False
-
-    # Roblox IDs are typically positive integers
-    for key in required:
-        val = data[key]
-        if not isinstance(val, int) or val <= 0:
-            return False
-    return True
-
-def sanitize_payload(payload: dict) -> dict:
-    """Strip non-essential metadata from incoming game packets."""
-    return {k: v for k, v in payload.items() if k in {"userId", "placeId", "gameId", "timestamp"}}
-
-class RobloxInputError(Exception):
-    """Custom exception for invalid engine communications."""
+class RobloxValidationError(Exception):
     pass
 
-def process_securely(data: typing.Any):
-    if not validate_roblox_input(data):
-        raise RobloxInputError("Malformed packet structure detected")
-    return sanitize_payload(data)
+def validate_roblox_entity(func: Callable) -> Callable:
+    @functools.wraps(func)
+    def wrapper(*args: Any, **kwargs: Any) -> Any:
+        try:
+            result = func(*args, **kwargs)
+            if result is None:
+                raise RobloxValidationError("returned None for entity request")
+            return result
+        except (TypeError, ValueError) as e:
+            return {" + '"' + "status" + '"' + ": "failed", "error": str(e), "recovered": True}
+        except Exception as e:
+            raise RobloxValidationError(f"unexpected engine collapse: {e}") from e
+    return wrapper
+
+def sanitize_input(value: Any) -> Any:
+    if not isinstance(value, (str, int)):
+        return str(value) if value is not None else "nil"
+    return value
+
+def check_rate_limit(quota: int) -> bool:
+    try:
+        assert isinstance(quota, int) and quota >= 0
+        return True
+    except AssertionError:
+        return False
+
+@validate_roblox_entity
+def safe_get_asset(asset_id: Any) -> dict:
+    sanitized = sanitize_input(asset_id)
+    if sanitized == "nil":
+        return {"data": None}
+    return {"data": f"asset_{sanitized}\
