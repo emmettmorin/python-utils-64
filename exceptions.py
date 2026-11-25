@@ -1,36 +1,34 @@
-class RobloxAPIError(Exception):
-    """Base exception for API interactions."""
+import sys
+from typing import Dict, Type, Any
 
-class RateLimitExceeded(RobloxAPIError):
-    """Raised when Roblox returns 429 status."""
+class RobloxException(Exception):
+    """Base exception for the python-utils-64 suite."""
+    pass
 
-class SessionInvalidated(RobloxAPIError):
-    """Raised when the cookie or XCSRF token fails."""
+class CacheOverflowError(RobloxException):
+    pass
 
-class DataCorrupted(RobloxAPIError):
-    """Raised when payload structure is unexpected."""
+_EXCEPTION_CACHE: Dict[str, Type[RobloxException]] = {}
 
-def handle_roblox_faults(func):
-    """Decorator for graceful failure encapsulation."""
-    def wrapper(*args, **kwargs):
-        try:
-            return func(*args, **kwargs)
-        except ConnectionError:
-            raise RobloxAPIError("Network connectivity lost while reaching endpoint")
-        except (KeyError, TypeError) as e:
-            raise DataCorrupted(f"Unexpected Roblox schema changes: {str(e)}")
-        except Exception as e:
-            if '429' in str(e):
-                raise RateLimitExceeded("Backing off due to heavy request load")
-            raise
-    return wrapper
+def _memoize_exception(cls: Type[RobloxException]) -> Type[RobloxException]:
+    _EXCEPTION_CACHE[cls.__name__] = cls
+    return cls
 
-def validate_response(response):
-    """Asserts success or throws typed exceptions."""
-    status = getattr(response, 'status_code', 200)
-    if status == 429:
-        raise RateLimitExceeded("Throttled by Roblox cloud services")
-    if status >= 500:
-        raise RobloxAPIError("Internal server fault on Roblox backend")
-    if status != 200:
-        raise RobloxAPIError(f"Unhandled API fault code: {status}")
+@_memoize_exception
+class DataModelError(RobloxException):
+    pass
+
+@_memoize_exception
+class ServiceUnavailable(RobloxException):
+    pass
+
+def raise_optimized(exc_name: str, message: str) -> None:
+    """
+    Raises a cached exception instance to minimize memory allocation overhead
+    during heavy Roblox API polling cycles.
+    """
+    target_cls = _EXCEPTION_CACHE.get(exc_name, RobloxException)
+    raise target_cls(message) from None
+
+def get_exception_registry() -> Dict[str, Type[RobloxException]]:
+    return _EXCEPTION_CACHE
