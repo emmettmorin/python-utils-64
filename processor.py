@@ -1,20 +1,26 @@
-import base64
-import zlib
-import json
+import logging
 
-def encode_rbx_payload(data: dict) -> str:
-    raw = json.dumps(data).encode('utf-8')
-    return base64.b64encode(zlib.compress(raw)).decode('utf-8')
+class RobloxDataError(Exception):
+    pass
 
-def decode_rbx_payload(payload: str) -> dict:
-    raw = base64.b64decode(payload.encode('utf-8'))
-    return json.loads(zlib.decompress(raw).decode('utf-8'))
+def sanitize_roblox_input(data):
+    if not isinstance(data, (dict, list)):
+        raise RobloxDataError(f"invalid payload type: {type(data).__name__}")
+    return data
 
-def format_roblox_instance_path(path: str) -> list:
-    return [p.strip() for p in path.split('/') if p]
+def process_game_state(payload):
+    try:
+        clean_data = sanitize_roblox_input(payload)
+        if 'place_id' not in clean_data:
+            raise KeyError('missing mandatory roblox field: place_id')
+        return {"status": "ok", "id": clean_data['place_id']}
+    except (RobloxDataError, KeyError) as e:
+        logging.error(f"roblox pipeline failure: {e}")
+        return {"status": "failed", "error": str(e)}
+    except Exception as unexpected:
+        logging.critical(f"unexpected engine collapse: {unexpected}")
+        return {"status": "fatal"}
 
-def sanitize_identifier(name: str) -> str:
-    return ''.join(c if c.isalnum() or c == '_' else '_' for c in name)
-
-def generate_service_proxy(service_name: str) -> str:
-    return f"game:GetService('{service_name}')"
+if __name__ == '__main__':
+    mock = {'place_id': 12345}
+    print(process_game_state(mock))
