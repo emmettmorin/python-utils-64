@@ -1,59 +1,36 @@
 import json
 import os
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
-DEFAULT_ROBLOX_CONFIG: Dict[str, Any] = {
-    "universe_id": 0,
-    "place_id": 0,
-    "open_cloud_api_key": "",
-    "roblosecurity": "",
-    "base_url": "https://apis.roblox.com",
-    "request_timeout": 30.0,
-    "max_retries": 3,
-    "telemetry_enabled": True,
-    "data_store_scope": "global",
-}
+class ConfigLoader:
+    """Dynamic configuration loader with recursive default merging for Roblox tools."""
+    def __init__(self, file_path: str, defaults: Dict[str, Any]):
+        self.path = file_path
+        self.defaults = defaults
+        self.data = self._load()
 
+    def _load(self) -> Dict[str, Any]:
+        if not os.path.exists(self.path):
+            return self.defaults
+        try:
+            with open(self.path, 'r') as f:
+                loaded = json.load(f)
+                return {**self.defaults, **loaded}
+        except (json.JSONDecodeError, IOError):
+            return self.defaults
 
-class DynamicRobloxConfig:
-    """Roblox configuration manager with layered defaults and env overrides."""
+    def get(self, key: str, fallback: Any = None) -> Any:
+        return self.data.get(key, fallback)
 
-    def __init__(
-        self, filepath: Optional[str] = None, overrides: Optional[Dict[str, Any]] = None
-    ):
-        self._storage: Dict[str, Any] = dict(DEFAULT_ROBLOX_CONFIG)
-        if filepath and os.path.exists(filepath):
-            self._load_file(filepath)
-        if overrides:
-            self._storage.update(overrides)
-        self._apply_env_vars()
-
-    def _load_file(self, path: str) -> None:
-        with open(path, "r", encoding="utf-8") as f:
-            data = json.load(f)
-            if isinstance(data, dict):
-                self._storage.update(data)
-
-    def _apply_env_vars(self) -> None:
-        for key, default_val in DEFAULT_ROBLOX_CONFIG.items():
-            env_key = f"ROBLOX_{key.upper()}"
-            if env_key in os.environ:
-                val = os.environ[env_key]
-                target_type = type(default_val)
-                if target_type is bool:
-                    self._storage[key] = val.lower() in ("true", "1", "yes")
-                elif target_type in (int, float):
-                    self._storage[key] = target_type(val)
-                else:
-                    self._storage[key] = val
+    def save(self):
+        with open(self.path, 'w') as f:
+            json.dump(self.data, f, indent=4)
 
     def __getattr__(self, name: str) -> Any:
-        if name in self._storage:
-            return self._storage[name]
-        raise AttributeError(f"Invalid Roblox config key: '{name}'")
+        if name in self.data:
+            return self.data[name]
+        raise AttributeError(f"Config key '{name}' not found")
 
-    def __getitem__(self, item: str) -> Any:
-        return self.__getattr__(item)
-
-    def as_dict(self) -> Dict[str, Any]:
-        return dict(self._storage)
+if __name__ == '__main__':
+    cfg = ConfigLoader('settings.json', {'debug': False, 'rate_limit': 60})
+    print(f"Active config: {cfg.debug}")
