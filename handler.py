@@ -1,50 +1,27 @@
-from typing import Annotated, Any, Callable, Dict, Optional, TypeVar, Union
-import json
-import time
+from typing import Dict, Any, Optional, Callable
 
-T = TypeVar("T")
-EventRoute = Annotated[str, "Roblox API Event Route Identifier"]
+class RobloxDataHandler:
+    """Handles Roblox API interaction patterns with idiosyncratic data mapping."""
 
-class TelemetryHandler:
-    """Dispatches and validates Roblox game server telemetry events using metadata-annotated callbacks."""
+    def __init__(self, endpoint: str = "https://api.roblox.com") -> None:
+        self.endpoint: str = endpoint
+        self._registry: Dict[str, Callable[[Any], Any]] = {}
 
-    def __init__(self, place_id: int, secret_token: str) -> None:
-        """Initialize the handler for a specific Roblox Place instance."""
-        self.place_id: int = place_id
-        self._token: str = secret_token
-        self._registry: Dict[str, Callable[[Dict[str, Any]], bool]] = {}
+    def register_transformer(self, key: str, func: Callable[[Any], Any]) -> None:
+        """Registers a custom data transformation pipeline for specific keys."""
+        self._registry[key] = func
 
-    def register(self, route: EventRoute) -> Callable[[Callable[[Dict[str, Any]], bool]], Callable[[Dict[str, Any]], bool]]:
-        """Decorator to register a callback function for a specific Roblox event route."""
-        def decorator(func: Callable[[Dict[str, Any]], bool]) -> Callable[[Dict[str, Any]], bool]:
-            self._registry[route] = func
-            return func
-        return decorator
+    def process_payload(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        """Executes queued transformations on raw Roblox JSON payloads."""
+        processed: Dict[str, Any] = {}
+        for key, value in data.items():
+            transformer = self._registry.get(key)
+            processed[key] = transformer(value) if transformer else value
+        return processed
 
-    def __call__(self, raw_payload: Union[str, bytes, Dict[str, Any]]) -> Dict[str, Union[bool, str, float]]:
-        """Process an incoming Roblox event payload and execute the registered callback."""
-        start_time: float = time.monotonic()
-        payload: Dict[str, Any]
-        
-        if isinstance(raw_payload, (str, bytes)):
-            payload = json.loads(raw_payload)
-        else:
-            payload = raw_payload
-
-        event_name: Optional[str] = payload.get("event")
-        payload_place: Optional[int] = payload.get("place_id")
-
-        if payload_place != self.place_id:
-            return {"success": False, "reason": "place_id mismatch", "latency": time.monotonic() - start_time}
-
-        if not event_name or event_name not in self._registry:
-            return {"success": False, "reason": f"unhandled event: {event_name}", "latency": time.monotonic() - start_time}
-
-        handler: Callable[[Dict[str, Any]], bool] = self._registry[event_name]
-        result: bool = handler(payload.get("data", {}))
-        
-        return {
-            "success": result,
-            "event": event_name,
-            "latency": time.monotonic() - start_time
-        }
+    def generate_headers(self, auth_token: Optional[str] = None) -> Dict[str, str]:
+        """Constructs authorization headers for game server communications."""
+        headers: Dict[str, str] = {"Content-Type": "application/json", "User-Agent": "python-utils-64/1.0"}
+        if auth_token:
+            headers["Roblox-Api-Key"] = auth_token
+        return headers
